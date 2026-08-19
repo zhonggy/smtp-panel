@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+/* 自定义滚动条 */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+/* 动画 */
+@keyframes pulse-fade { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+.animate-pulse-fade { animation: pulse-fade 2s ease-in-out infinite; }
+
+@keyframes slide-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.animate-slide-up { animation: slide-up 0.2s ease-out; }
+
+/* 淡入淡出 */
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+.animate-fade-in { animation: fade-in 0.2s ease-out; }
