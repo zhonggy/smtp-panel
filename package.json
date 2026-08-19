@@ -1,0 +1,26 @@
+{
+  "name": "smtp-panel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "基于 Cloudflare Workers + D1 + KV + Queues 的 SMTP 批量发信管理系统",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w apps/web",
+    "build:web": "npm run build -w apps/web",
+    "deploy": "npm run build:web && npm run db:migrate:remote && wrangler deploy",
+    "dev:worker": "wrangler dev",
+    "dev:web": "npm run dev -w apps/web",
+    "dev:smtp": "node scripts/fake-smtp-server.mjs",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:generate": "npm run generate -w packages/db",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote"
+  },
+  "devDependencies": {
+    "smtp-server": "^3.13.6",
+    "wrangler": "^4.40.0"
+  }
+}

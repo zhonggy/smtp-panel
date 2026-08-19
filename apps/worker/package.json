@@ -1,0 +1,19 @@
+{
+  "name": "@panel/worker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@panel/db": "*",
+    "@panel/mail": "*",
+    "@panel/shared": "*",
+    "drizzle-orm": "^0.44.0",
+    "hono": "^4.7.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250922.0",
+    "typescript": "^5.9.2"
+  }
+}
