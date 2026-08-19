@@ -12,7 +12,8 @@ export interface Env {
   KV: KVNamespace;
   MAIL_QUEUE: Queue<QueueMessage>;
   ASSETS: Fetcher;
-  ENCRYPTION_KEY: string;
+  /** 加密密钥(可选:未设置时自动生成并存储于 D1) */
+  ENCRYPTION_KEY?: string;
 }
 
 /** Hono 环境类型 */

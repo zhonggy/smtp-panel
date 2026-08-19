@@ -1,8 +1,16 @@
-# SMTP Panel — Cloudflare 批量发信管理系统
+<div align="center">
 
-基于 **Cloudflare Workers 全家桶**(Workers + D1 + KV + Queues + TCP Sockets)的 Web 邮件批量发送管理系统。
+# SMTP Panel
 
-**不购买 VPS、不自建邮件服务器** —— 前端、后端、数据库、缓存、队列全部运行在 Cloudflare 免费额度可覆盖的架构上,邮件实际投递由第三方 SMTP(支持 465 SSL / 587 STARTTLS)完成。
+**基于 Cloudflare Workers 全家桶的批量发信管理系统**
+
+不购买 VPS · 不自建邮件服务器 · Workers + D1 + KV + Queues + 第三方 SMTP
+
+<a href="https://deploy.workers.cloudflare.com/?url=https://github.com/zhonggy/cf-serv00">
+  <img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare Workers" style="height: 32px;"/>
+</a>
+
+</div>
 
 > 项目规划文档见 [`cloudflare-smtp-batch-mail-project-plan.md`](./cloudflare-smtp-batch-mail-project-plan.md)
 
@@ -79,27 +87,30 @@
 | 缓存/会话 | Cloudflare KV |
 | 队列 | Cloudflare Queues |
 | SMTP | Workers TCP Sockets(`cloudflare:sockets`) |
-| 部署 | Wrangler 4 |
+| 部署 | Wrangler 4(支持一键部署按钮) |
 
 ### 项目结构
 
 ```
+├── wrangler.toml               # Worker 配置(根目录,Deploy Button 要求)
+├── .dev.vars.example           # Secret 示例(部署向导会提示填写)
 ├── apps/
-│   ├── worker/                 # Cloudflare Worker(API + Consumer + 静态资产)
+│   ├── worker/                 # Worker 源码(API + Consumer)
 │   │   ├── src/
 │   │   │   ├── api/            # REST API
 │   │   │   │   ├── routes/     # auth / smtp / templates / recipients / campaigns / logs / dashboard / settings
 │   │   │   │   ├── services/   # 外部 API 拉取服务
-│   │   │   │   ├── crypto.ts   # PBKDF2 密码哈希 + AES-GCM 加解密
+│   │   │   │   ├── crypto.ts   # PBKDF2 密码哈希 + AES-GCM 加解密(密钥自动降级策略)
 │   │   │   │   ├── middleware.ts # 会话鉴权 + 登录限流
 │   │   │   │   └── queue.ts    # 入队辅助(KV tick 锁)
 │   │   │   ├── queue/consumer.ts # 队列消费者:批量发送/重试/限速/自愈
+│   │   │   ├── bootstrap.ts    # 运行时建表兜底(幂等)
 │   │   │   └── index.ts        # 入口:fetch + queue + scheduled
-│   │   └── wrangler.toml
+│   │   └── tsconfig.json
 │   └── web/                    # React 前端(SPA)
 │       └── src/pages/          # Login / Dashboard / Smtp / Templates / Recipients / Campaigns / Logs / Settings
 ├── packages/
-│   ├── db/                     # Drizzle schema + D1 迁移(migrations/0001_init.sql)
+│   ├── db/                     # Drizzle schema + D1 迁移(migrations/0001_init.sql,幂等)
 │   ├── mail/                   # SMTP 客户端(TCP + 465/587)+ MIME 构建
 │   └── shared/                 # 前后端共享类型与工具(校验/CSV/模板变量)
 ├── scripts/
@@ -110,87 +121,63 @@
 
 ---
 
-## 部署指南(生产环境)
+## 部署到 Cloudflare
 
-### 前置条件
+### 方式一:一键部署(推荐)
 
-- Node.js ≥ 20.19(推荐 22/24)
-- 一个 Cloudflare 账号(免费套餐即可运行全部功能)
-- 至少一个可用的第三方 SMTP 账号(465 或 587 端口)
-- 已安装并登录 Wrangler:`npm install -g wrangler && wrangler login`(或使用项目内 `npx wrangler`)
+点击上方 **Deploy to Cloudflare Workers** 按钮(或[此链接](https://deploy.workers.cloudflare.com/?url=https://github.com/zhonggy/cf-serv00)),流程如下:
 
-### 第 1 步:安装依赖
+1. 授权 Cloudflare 账号(免费套餐即可)并关联你的 GitHub
+2. 在配置页可自定义:仓库名、Worker 名称、**D1 数据库名 / KV 命名空间名 / 队列名**(资源不存在会自动创建并绑定,无需手动建)
+3. 按提示填写 `ENCRYPTION_KEY`(加密 SMTP 密码与 API Key 的主密钥,建议 `openssl rand -base64 32` 生成的随机串;**留空也可以**,系统会自动生成随机密钥存储在数据库中)
+4. 点击部署 —— Cloudflare 会克隆仓库、安装依赖、执行 D1 迁移并部署 Worker
+5. 部署完成后打开 Worker 域名,首次访问即进入「初始化管理员」页面
+
+> 一键部署会**把仓库克隆到你的 GitHub 账号下**,后续可在 Cloudflare Dashboard 中通过 Workers Builds 持续构建(推送即重新部署)。
+> 仓库需为公开仓库,Deploy Button 才对其他人生效。
+
+### 方式二:手动部署(Wrangler CLI)
+
+**前置条件**:Node.js ≥ 20.19、Cloudflare 账号、一个可用的第三方 SMTP(465/587 端口)。
 
 ```bash
-git clone <本项目> && cd 本项目目录
+# 1. 克隆并安装依赖(Windows 上若报 workerd 相关错误,改用: npm install --ignore-scripts)
+git clone https://github.com/zhonggy/cf-serv00.git && cd cf-serv00
 npm install
-```
 
-> 若 `npm install` 在 Windows 上报 `workerd ... spawn cmd.exe ENOENT`,改用:
-> ```bash
-> npm install --ignore-scripts
-> ```
-> 不影响功能(wrangler 所需的平台二进制以依赖包形式安装)。
-> 若 npm 源超时,可切换镜像:`npm config set registry https://mirrors.cloud.tencent.com/npm/` 或换回官方源。
-
-### 第 2 步:创建 Cloudflare 资源(每个账号只需一次)
-
-```bash
-# 1. 创建 D1 数据库 —— 记下输出中的 database_id
+# 2. 创建资源(每个账号只需一次),记下输出的 database_id 与 KV id
 npx wrangler d1 create smtp-panel
-
-# 2. 创建 KV 命名空间 —— 记下输出中的 id
 npx wrangler kv namespace create KV
-
-# 3. 创建发信队列
 npx wrangler queues create smtp-panel-mail
+
+# 3. 把两个 ID 填入根目录 wrangler.toml 的对应占位符
+
+# 4. (可选)设置加密主密钥;不设则自动生成并存储在数据库中
+npx wrangler secret put ENCRYPTION_KEY
+
+# 5. 一键构建 + 迁移 + 部署
+npm run deploy
 ```
 
-### 第 3 步:填写配置
-
-编辑 `apps/worker/wrangler.toml`,替换两个占位符:
-
-```toml
-[[d1_databases]]
-database_id = "第2步获得的-database-id"
-
-[[kv_namespaces]]
-id = "第2步获得的-kv-id"
-```
-
-其余(队列名、Cron、消费者并发)保持默认即可。
-
-### 第 4 步:设置加密密钥
+<details>
+<summary>各命令分解(需要单独执行时)</summary>
 
 ```bash
-npx wrangler secret put ENCRYPTION_KEY --config apps/worker/wrangler.toml
+npm run build:web           # 构建前端到 apps/web/dist
+npm run db:migrate:remote   # 应用 D1 迁移(也可由 Worker 运行时自动建表兜底)
+npx wrangler deploy         # 部署 Worker
 ```
+</details>
 
-输入一段 **至少 32 位的随机字符串**(可用 `openssl rand -base64 32` 生成)。它用于加密 SMTP 密码与外部 API Key(AES-GCM),**忘记/更换后将无法解密已存的凭据,需重新录入**。
+**(可选)绑定自定义域名**:Cloudflare Dashboard → Workers & Pages → `smtp-panel` → Settings → Domains & Routes → Add Custom Domain,自动获得 HTTPS。
 
-### 第 5 步:初始化数据库
-
-```bash
-npm run db:migrate:remote
-```
-
-### 第 6 步:构建并部署
-
-```bash
-npm run deploy        # = 构建前端 + wrangler deploy
-```
-
-部署完成后记下输出的域名(如 `https://smtp-panel.<你的子域>.workers.dev`)。首次打开会进入「初始化管理员」页面,设置用户名和密码(密码至少 8 位)即可登录使用。
-
-### (可选)绑定自定义域名
-
-Cloudflare Dashboard → Workers & Pages → `smtp-panel` → Settings → Domains & Routes → Add Custom Domain。域名自动获得 HTTPS 证书。
+> **迁移与建表**:本项目做了双保险 —— `npm run deploy` 会在部署前执行 `wrangler d1 migrations apply DB --remote`(按绑定名引用,兼容一键部署时自动重命名的数据库);即使跳过迁移,Worker 首次收到请求时也会自动执行幂等建表(`IF NOT EXISTS`)。
 
 ---
 
 ## 本地开发
 
-> 首次运行前先构建一次前端（`wrangler dev` 启动时需要 `apps/web/dist` 目录存在）：
+> 首次运行前先构建一次前端(`wrangler dev` 启动时需要 `apps/web/dist` 目录存在):
 > ```bash
 > npm run build:web
 > ```
@@ -205,13 +192,7 @@ npm run dev:web
 # 浏览器打开 http://localhost:5173
 ```
 
-本地首次运行前,先初始化本地数据库(生成 `.wrangler/state` 下的 SQLite):
-
-```bash
-npm run db:migrate:local
-```
-
-本地密钥放在 `apps/worker/.dev.vars`(已内置一个开发用 Key,生产请勿复用)。
+本地数据保存在 `.wrangler/state/`(首次请求自动建表;如需重置,删除该目录即可)。本地密钥 `.dev.vars` 留空时自动生成。
 
 ### 本地完整链路测试(无需真实 SMTP)
 
@@ -334,7 +315,8 @@ POST            /api/settings/test-external       外部 API 连接测试
 ## 安全设计
 
 - **密码**:PBKDF2-SHA256,100,000 轮迭代 + 随机盐,常量时间比较
-- **敏感凭据**(SMTP 密码、外部 API Key):AES-256-GCM 加密落库,密钥仅存于 Worker Secret,任何 API 不回显明文
+- **加密主密钥**:优先使用 `ENCRYPTION_KEY` Secret(自动拒绝示例/弱值);未配置时自动生成随机密钥原子写入数据库,Settings 页会提示并支持后期通过 Secret 覆盖(更换后需重新录入已加密凭据)
+- **敏感凭据**(SMTP 密码、外部 API Key):AES-256-GCM 加密落库,任何 API 不回显明文
 - **会话**:随机 token 存 KV(7 天 TTL),HttpOnly + SameSite=Lax Cookie;每次请求校验用户仍存在且启用
 - **登录限流**:同 IP 10 次 / 10 分钟(KV 计数)
 - **SQL 注入**:全部走 Drizzle 参数化 / D1 预编译语句
@@ -360,10 +342,13 @@ POST            /api/settings/test-external       外部 API 连接测试
 系统按「每分钟一个 tick」的节奏发送以精确控速。需要更快速度时可添加多个 SMTP 账号并创建多个任务并行(每个任务独立限速)。
 
 **Q: 免费套餐够用吗?**
-D1(5GB 存储 / 500 万行读每天)、KV、Queues、Workers(10 万请求/天)对中小规模发信完全够用;单次外部拉取上限 1 万邮箱由免费版 50 子请求/次推导而来。
+D1(5GB 存储 / 500 万行读每天)、KV、Queues、Workers(10 万请求/天)、Workers Builds(3000 构建分钟/月)对中小规模发信完全够用;单次外部拉取上限 1 万邮箱由免费版 50 子请求/次推导而来。
 
 **Q: wrangler 命令卡住?**
 多为网络问题(版本检查/登录态)。重试即可;涉及远程资源的命令可加 `--remote`。本地迁移数据库用 `npm run db:migrate:local`。
+
+**Q: 一键部署后想改代码?**
+仓库已克隆到你的 GitHub,直接推送即可触发 Workers Builds 自动重新部署;或本地 `git clone` 你的仓库后用 `npm run deploy` 手动部署。
 
 ---
 

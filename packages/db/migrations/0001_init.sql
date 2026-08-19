@@ -1,5 +1,5 @@
--- 初始化:所有业务表
-CREATE TABLE users (
+-- 初始化:所有业务表(幂等,可重复执行)
+CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL,
   password_hash TEXT NOT NULL,
@@ -8,9 +8,9 @@ CREATE TABLE users (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
-CREATE UNIQUE INDEX idx_users_username ON users (username);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users (username);
 
-CREATE TABLE smtp_accounts (
+CREATE TABLE IF NOT EXISTS smtp_accounts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   host TEXT NOT NULL,
@@ -27,7 +27,7 @@ CREATE TABLE smtp_accounts (
   updated_at TEXT NOT NULL
 );
 
-CREATE TABLE mail_templates (
+CREATE TABLE IF NOT EXISTS mail_templates (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   subject TEXT NOT NULL,
@@ -37,7 +37,7 @@ CREATE TABLE mail_templates (
   updated_at TEXT NOT NULL
 );
 
-CREATE TABLE recipients (
+CREATE TABLE IF NOT EXISTS recipients (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT,
   email TEXT NOT NULL,
@@ -47,9 +47,9 @@ CREATE TABLE recipients (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
-CREATE UNIQUE INDEX idx_recipients_email ON recipients (email);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_recipients_email ON recipients (email);
 
-CREATE TABLE campaigns (
+CREATE TABLE IF NOT EXISTS campaigns (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   smtp_id INTEGER NOT NULL,
@@ -69,7 +69,7 @@ CREATE TABLE campaigns (
   finished_at TEXT
 );
 
-CREATE TABLE campaign_recipients (
+CREATE TABLE IF NOT EXISTS campaign_recipients (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   campaign_id INTEGER NOT NULL,
   recipient_id INTEGER,
@@ -80,10 +80,10 @@ CREATE TABLE campaign_recipients (
   last_error TEXT,
   sent_at TEXT
 );
-CREATE INDEX idx_cr_campaign_status ON campaign_recipients (campaign_id, status);
-CREATE INDEX idx_cr_campaign_id ON campaign_recipients (campaign_id, id);
+CREATE INDEX IF NOT EXISTS idx_cr_campaign_status ON campaign_recipients (campaign_id, status);
+CREATE INDEX IF NOT EXISTS idx_cr_campaign_id ON campaign_recipients (campaign_id, id);
 
-CREATE TABLE send_logs (
+CREATE TABLE IF NOT EXISTS send_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   campaign_id INTEGER,
   campaign_name TEXT,
@@ -97,11 +97,11 @@ CREATE TABLE send_logs (
   duration_ms INTEGER,
   created_at TEXT NOT NULL
 );
-CREATE INDEX idx_logs_created ON send_logs (created_at);
-CREATE INDEX idx_logs_campaign ON send_logs (campaign_id);
-CREATE INDEX idx_logs_status ON send_logs (status);
+CREATE INDEX IF NOT EXISTS idx_logs_created ON send_logs (created_at);
+CREATE INDEX IF NOT EXISTS idx_logs_campaign ON send_logs (campaign_id);
+CREATE INDEX IF NOT EXISTS idx_logs_status ON send_logs (status);
 
-CREATE TABLE smtp_daily_stats (
+CREATE TABLE IF NOT EXISTS smtp_daily_stats (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   smtp_id INTEGER NOT NULL,
   date TEXT NOT NULL,
@@ -109,9 +109,9 @@ CREATE TABLE smtp_daily_stats (
   success INTEGER NOT NULL DEFAULT 0,
   failed INTEGER NOT NULL DEFAULT 0
 );
-CREATE UNIQUE INDEX idx_sds_smtp_date ON smtp_daily_stats (smtp_id, date);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sds_smtp_date ON smtp_daily_stats (smtp_id, date);
 
-CREATE TABLE settings (
+CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
   updated_at TEXT NOT NULL

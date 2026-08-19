@@ -1,12 +1,12 @@
 #:schema node_modules/wrangler/config-schema.json
 name = "smtp-panel"
-main = "src/index.ts"
+main = "apps/worker/src/index.ts"
 compatibility_date = "2025-06-01"
 compatibility_flags = ["nodejs_compat"]
 
 # 前端静态资产(React 构建产物,同源部署,免 CORS)
 [assets]
-directory = "../web/dist"
+directory = "apps/web/dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 
@@ -15,7 +15,7 @@ not_found_handling = "single-page-application"
 binding = "DB"
 database_name = "smtp-panel"
 database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
-migrations_dir = "../../packages/db/migrations"
+migrations_dir = "packages/db/migrations"
 
 # KV:Session / 限流 / 队列节流锁
 [[kv_namespaces]]
@@ -37,6 +37,12 @@ max_concurrency = 3
 # 每分钟巡检:恢复卡住的任务
 [triggers]
 crons = ["* * * * *"]
+
+# 将 SQL 迁移文件作为文本导入(运行时自动建表兜底)
+[[rules]]
+type = "Text"
+globs = ["**/*.sql"]
+fallthrough = false
 
 [observability]
 enabled = true

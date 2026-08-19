@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import type { Env, QueueMessage } from "./env";
 import { apiApp } from "./api";
 import { handleQueueMessage, runWatchdog } from "./queue/consumer";
+import { ensureSchema } from "./bootstrap";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -13,9 +14,13 @@ app.route("/api", apiApp);
 app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));
 
 export default {
-  fetch: app.fetch,
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    await ensureSchema(env.DB);
+    return app.fetch(request, env, ctx);
+  },
 
   async queue(batch: MessageBatch<QueueMessage>, env: Env) {
+    await ensureSchema(env.DB);
     for (const msg of batch.messages) {
       try {
         await handleQueueMessage(env, msg.body);
@@ -28,6 +33,11 @@ export default {
   },
 
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(runWatchdog(env));
+    ctx.waitUntil(
+      (async () => {
+        await ensureSchema(env.DB);
+        await runWatchdog(env);
+      })(),
+    );
   },
 };

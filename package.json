@@ -8,21 +8,19 @@
     "apps/*"
   ],
   "scripts": {
-    "dev:worker": "npm run dev -w apps/worker",
+    "build": "npm run build -w apps/web",
+    "build:web": "npm run build -w apps/web",
+    "deploy": "npm run build:web && npm run db:migrate:remote && wrangler deploy",
+    "dev:worker": "wrangler dev",
     "dev:web": "npm run dev -w apps/web",
     "dev:smtp": "node scripts/fake-smtp-server.mjs",
-    "build:web": "npm run build -w apps/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "db:generate": "npm run generate -w packages/db",
-    "db:migrate:local": "wrangler d1 migrations apply smtp-panel --local --config apps/worker/wrangler.toml",
-    "db:migrate:remote": "wrangler d1 migrations apply smtp-panel --remote --config apps/worker/wrangler.toml",
-    "deploy": "npm run build:web && wrangler deploy --config apps/worker/wrangler.toml"
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote"
   },
   "devDependencies": {
     "smtp-server": "^3.13.6",
     "wrangler": "^4.40.0"
-  },
-  "dependencies": {
-    "hono": "^4.13.3"
   }
 }

@@ -102,7 +102,7 @@ async function handleCampaignTick(env: Env, campaignId: number): Promise<void> {
   }
 
   // 7) 解密密码
-  const password = await decryptText(env.ENCRYPTION_KEY, smtp.password_encrypted);
+  const password = await decryptText(env, smtp.password_encrypted);
 
   // 8) 取批量收件人
   const batch = await db

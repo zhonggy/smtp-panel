@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { settings } from "@panel/db";
 import type { AppEnv } from "../../env";
-import { encryptText, decryptText } from "../crypto";
+import { encryptText, decryptText, encryptionKeySource } from "../crypto";
 import {
   EXTERNAL_API_BASE_URL_KEY,
   EXTERNAL_API_KEY_STORED,
@@ -23,6 +23,7 @@ router.get("/", async (c) => {
     external_api_base_url: map.get(EXTERNAL_API_BASE_URL_KEY) ?? null,
     external_api_default_group: map.get(EXTERNAL_API_DEFAULT_GROUP) ?? null,
     has_external_api_key: !!keyEncrypted,
+    encryption_key_source: await encryptionKeySource(c.env),
   });
 });
 
@@ -46,7 +47,7 @@ router.put("/", async (c) => {
     await upsert(EXTERNAL_API_DEFAULT_GROUP, String(body.external_api_default_group ?? ""));
   }
   if (typeof body.external_api_key === "string" && body.external_api_key) {
-    const encrypted = await encryptText(c.env.ENCRYPTION_KEY, body.external_api_key);
+    const encrypted = await encryptText(c.env, body.external_api_key);
     await upsert(EXTERNAL_API_KEY_STORED, encrypted);
   }
   // 空字符串/未传 → 保持原值;显式 clear_api_key=true → 清除
@@ -67,7 +68,7 @@ router.post("/test-external", async (c) => {
   if (!baseUrl || !keyEncrypted) {
     return c.json({ ok: false, error: "未配置外部 API 地址或密钥" });
   }
-  const apiKey = await decryptText(c.env.ENCRYPTION_KEY, keyEncrypted);
+  const apiKey = await decryptText(c.env, keyEncrypted);
   try {
     const url = new URL("/api/external/accounts", baseUrl);
     url.searchParams.set("limit", "1");

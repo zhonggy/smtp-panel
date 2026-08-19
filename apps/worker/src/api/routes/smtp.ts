@@ -57,7 +57,7 @@ router.post("/", async (c) => {
 
   const now = new Date().toISOString();
   const db = drizzle(c.env.DB);
-  const password_encrypted = await encryptText(c.env.ENCRYPTION_KEY, password);
+  const password_encrypted = await encryptText(c.env, password);
   const [row] = await db
     .insert(smtp_accounts)
     .values({
@@ -103,7 +103,7 @@ router.put("/:id", async (c) => {
   if (body.port !== undefined) upd.port = parseInt(body.port, 10) || existing.port;
   if (body.username !== undefined) upd.username = body.username;
   if (body.password && typeof body.password === "string") {
-    upd.password_encrypted = await encryptText(c.env.ENCRYPTION_KEY, body.password);
+    upd.password_encrypted = await encryptText(c.env, body.password);
   }
   if (body.security !== undefined) {
     if (!["ssl", "starttls", "none"].includes(body.security)) return c.json({ error: "security 无效" }, 400);
@@ -144,7 +144,7 @@ router.post("/:id/test", async (c) => {
   const db = drizzle(c.env.DB);
   const [row] = await db.select().from(smtp_accounts).where(eq(smtp_accounts.id, id)).limit(1);
   if (!row) return c.json({ error: "SMTP 账号不存在" }, 404);
-  const password = await decryptText(c.env.ENCRYPTION_KEY, row.password_encrypted);
+  const password = await decryptText(c.env, row.password_encrypted);
   const result = await testSmtpConnection({
     host: row.host,
     port: row.port,

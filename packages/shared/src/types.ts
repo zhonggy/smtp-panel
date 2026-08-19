@@ -119,6 +119,7 @@ export interface SettingsDTO {
   external_api_base_url: string | null;
   external_api_default_group: string | null;
   has_external_api_key: boolean;
+  encryption_key_source: "secret" | "auto";
 }
 
 /** 分页列表响应 */

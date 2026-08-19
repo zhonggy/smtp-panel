@@ -6,7 +6,7 @@ import { useToast } from "../toast";
 
 export default function Settings() {
   const { toast } = useToast();
-  const [settings, setSettings] = useState<SettingsDTO>({ external_api_base_url: "", external_api_default_group: "", has_external_api_key: false });
+  const [settings, setSettings] = useState<SettingsDTO>({ external_api_base_url: "", external_api_default_group: "", has_external_api_key: false, encryption_key_source: "auto" });
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [defaultGroup, setDefaultGroup] = useState("");
@@ -78,6 +78,15 @@ export default function Settings() {
   return (
     <div className="space-y-6 max-w-xl">
       <h1 className="text-lg font-bold text-slate-200">设置</h1>
+
+      {/* 密钥来源提示 */}
+      {settings.encryption_key_source === "auto" && (
+        <div className="text-xs text-amber-300 bg-amber-900/20 border border-amber-800/40 rounded-lg px-3 py-2">
+          ⚠ 当前使用自动生成的加密密钥(存储在数据库中)。生产环境建议执行
+          <code className="mx-1 px-1 bg-slate-800 rounded">npx wrangler secret put ENCRYPTION_KEY</code>
+          配置独立密钥;更换密钥后已保存的 SMTP 密码 / API Key 需重新录入。
+        </div>
+      )}
 
       {/* 外部对接 */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">

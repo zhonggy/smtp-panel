@@ -186,7 +186,7 @@ router.post("/import-external", async (c) => {
     return c.json({ error: "请先在设置中配置外部 API 地址和密钥" }, 400);
   }
 
-  const apiKey = await decryptText(c.env.ENCRYPTION_KEY, keyEncrypted);
+  const apiKey = await decryptText(c.env, keyEncrypted);
 
   let accounts: { email: string; status: string; group_name?: string | null; remark?: string | null }[];
   let remoteTotal: number;
