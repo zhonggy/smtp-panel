@@ -14,6 +14,7 @@ const router = new Hono<AppEnv>();
 router.get("/", async (c) => {
   const db = drizzle(c.env.DB);
   const today = todayUTC();
+  const nowISO = new Date().toISOString();
   const rows = await db
     .select({
       a: smtp_accounts,
@@ -35,6 +36,7 @@ router.get("/", async (c) => {
         today_total: s_total ?? 0,
         today_success: s_success ?? 0,
         today_failed: s_failed ?? 0,
+        cooling: !!(a.cooldown_until && a.cooldown_until > nowISO),
       };
     }),
   );
@@ -43,7 +45,7 @@ router.get("/", async (c) => {
 /** 添加 */
 router.post("/", async (c) => {
   const body = await c.req.json();
-  const { name, host, port, username, password, security, from_name, from_email, reply_to, daily_limit, enabled } = body;
+  const { name, host, port, username, password, security, from_name, from_email, reply_to, daily_limit, enabled, in_pool, weight } = body;
   if (!host || !username || !password || !from_email) {
     return c.json({ error: "host/username/password/from_email 为必填项" }, 400);
   }
@@ -72,6 +74,8 @@ router.post("/", async (c) => {
       reply_to: reply_to || null,
       daily_limit: daily_limit ?? 0,
       enabled: enabled !== false,
+      in_pool: in_pool !== false,
+      weight: Math.min(100, Math.max(1, parseInt(weight, 10) || 1)),
       created_at: now,
       updated_at: now,
     })
@@ -117,6 +121,16 @@ router.put("/:id", async (c) => {
   if (body.reply_to !== undefined) upd.reply_to = body.reply_to || null;
   if (body.daily_limit !== undefined) upd.daily_limit = body.daily_limit;
   if (body.enabled !== undefined) upd.enabled = body.enabled;
+  if (body.in_pool !== undefined) upd.in_pool = body.in_pool === true;
+  if (body.weight !== undefined) {
+    upd.weight = Math.min(100, Math.max(1, parseInt(body.weight, 10) || 1));
+  }
+  // 修改配置视为问题已处理:清除冷却与失败计数
+  if (body.password || body.host !== undefined || body.username !== undefined || body.enabled === true) {
+    upd.cooldown_until = null;
+    upd.consecutive_failures = 0;
+    upd.last_error = null;
+  }
 
   await db.update(smtp_accounts).set(upd).where(eq(smtp_accounts.id, id));
   return c.json({ ok: true });
@@ -135,6 +149,24 @@ router.delete("/:id", async (c) => {
     .where(and(eq(campaigns.smtp_id, id), sql`status IN ('draft','queued','sending','paused')`));
   if (n > 0) return c.json({ error: `该 SMTP 账号被 ${n} 个待处理任务引用,无法删除` }, 400);
   await db.delete(smtp_accounts).where(eq(smtp_accounts.id, id));
+  return c.json({ ok: true });
+});
+
+/** 解除冷却(人工确认问题已修复) */
+router.post("/:id/uncool", async (c) => {
+  const id = parseInt(c.req.param("id"), 10);
+  const db = drizzle(c.env.DB);
+  const [row] = await db.select().from(smtp_accounts).where(eq(smtp_accounts.id, id)).limit(1);
+  if (!row) return c.json({ error: "SMTP 账号不存在" }, 404);
+  await db
+    .update(smtp_accounts)
+    .set({
+      cooldown_until: null,
+      consecutive_failures: 0,
+      last_error: null,
+      updated_at: new Date().toISOString(),
+    })
+    .where(eq(smtp_accounts.id, id));
   return c.json({ ok: true });
 });
 

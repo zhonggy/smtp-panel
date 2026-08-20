@@ -38,10 +38,14 @@
 | **SMTP 账号** | 增删改查、密码 AES-GCM 加密存储、连接测试(逐阶段日志)、每日发送上限、启用/禁用、今日用量统计 |
 | **邮件模板** | HTML + 纯文本、主题、变量替换 `{{name}}` `{{email}}` `{{remark}}` `{{date}}`、实时预览 |
 | **收件人** | 手动添加、CSV/文本批量导入、**从外部系统拉取(outlookEmail 对外 API)**、搜索、去重、屏蔽/恢复 |
-| **发送任务** | 任务创建(快照收件人)、测试模式(仅发一封)、启动/暂停/恢复/取消、进度条、收件人明细、失败重试 |
-| **异步发送** | Cloudflare Queues + Consumer,每分钟一个 tick 按速度批量发送,单连接复用,失败自动重试(可配置次数) |
-| **日志与统计** | 每封邮件一条日志(状态/耗时/错误)、Dashboard 汇总(今日发送/成功率/SMTP 用量/7 天趋势/最近错误) |
-| **自愈巡检** | Cron 每分钟检查卡住的任务并自动恢复(消息丢失/异常退出场景) |
+| **发送任务** | 任务创建(快照收件人)、**定时发送**、测试模式(仅发一封)、启动/暂停/恢复/取消、进度条、收件人明细、失败重试 |
+| **SMTP 池轮换** | 多账号自动轮换,按剩余额度与权重加权分配;账号故障自动冷却切换;支持指定候选账号 |
+| **退信分类** | 13 类退信识别(RFC 3463 增强码 + 关键词 + 响应码),自动决定 重试/放弃/加入抑制名单/冷却账号 |
+| **抑制名单** | 硬退信地址自动入库,后续任务创建时自动排除;支持手动增删与批量导入 |
+| **统计报表** | 趋势图、SMTP 表现排行、退信构成与 类别×日期 热力图、退信样本排查、任务维度报表 |
+| **异步发送** | Cloudflare Queues + Consumer,每分钟一个 tick 按速度批量发送,连接按账号复用 |
+| **日志与统计** | 每封邮件一条日志(状态/耗时/退信类别/SMTP 码)、Dashboard 汇总与告警 |
+| **自愈巡检** | Cron 每分钟启动到点的定时任务 + 恢复卡住的任务 |
 
 ### 收件人外部拉取(对接 outlookEmail)
 
@@ -118,15 +122,18 @@
 │   │   │   │   ├── crypto.ts   # PBKDF2 密码哈希 + AES-GCM 加解密(密钥自动降级策略)
 │   │   │   │   ├── middleware.ts # 会话鉴权 + 登录限流
 │   │   │   │   └── queue.ts    # 入队辅助(KV tick 锁)
-│   │   │   ├── queue/consumer.ts # 队列消费者:批量发送/重试/限速/自愈
-│   │   │   ├── bootstrap.ts    # 运行时建表兜底(幂等)
+│   │   │   ├── queue/
+│   │   │   │   ├── consumer.ts # 队列消费者:批量发送/重试/限速/退信分类/定时启动/自愈
+│   │   │   │   └── pool.ts     # SMTP 池调度器:加权选账号 + 冷却策略
+│   │   │   ├── bootstrap.ts    # 运行时建表与升级兜底(幂等)
 │   │   │   └── index.ts        # 入口:fetch + queue + scheduled
 │   │   └── tsconfig.json
 │   └── web/                    # React 前端(SPA)
-│       └── src/pages/          # Login / Dashboard / Smtp / Templates / Recipients / Campaigns / Logs / Settings
+│       └── src/pages/          # Login / Dashboard / Smtp / Templates / Recipients
+│                               # Campaigns / CampaignDetail / Logs / Reports / Suppressions / Settings
 ├── packages/
-│   ├── db/                     # Drizzle schema + D1 迁移(migrations/0001_init.sql,幂等)
-│   ├── mail/                   # SMTP 客户端(TCP + 465/587)+ MIME 构建
+│   ├── db/                     # Drizzle schema + D1 迁移(0001 建表 / 0002 定时+池+退信)
+│   ├── mail/                   # SMTP 客户端(TCP + 465/587)+ MIME 构建 + 退信分类引擎
 │   └── shared/                 # 前后端共享类型与工具(校验/CSV/模板变量)
 ├── scripts/
 │   ├── fake-smtp-server.mjs    # 本地假 SMTP 服务器(测试用)
@@ -320,12 +327,73 @@ npm run dev:smtp        # 监听 127.0.0.1:2525
 - 连接/认证/超时级错误:整个任务自动**暂停**并在详情页显示原因(避免拿坏配置硬打服务器),修复 SMTP 后点「恢复」继续
 - Cron 每分钟巡检,自动恢复因消息丢失卡住的任务(>4 分钟无进度且无锁,或 >15 分钟僵死强制恢复)
 
-### 5. Dashboard 与日志
+### 5. 定时发送
 
-- 今日发送/成功/失败/成功率、SMTP 账号与今日用量、进行中任务数
-- 近 7 天发送趋势(成功/失败堆叠)
-- 最近 5 条失败记录
-- 日志页支持按状态/关键字过滤,显示任务名、SMTP 名、耗时、错误信息
+创建或编辑任务时设置「定时发送」时间(支持 10 分钟后 / 30 分钟后 / 1 小时后 / 3 小时后 / 明天同一时间 快捷按钮),然后点「排定」:
+
+- 任务进入 `定时中` 状态,不会立即发送
+- Cron 每分钟扫描一次,到点自动快照收件人并入队
+- 排定后仍可「取消定时」退回草稿,或直接「取消」任务
+- 时间使用浏览器本地时区显示,存储为 UTC
+
+> 定时精度取决于 Cron 触发频率(每分钟一次),实际启动时间可能比设定值晚 0-60 秒。
+
+### 6. SMTP 池轮换
+
+创建任务时选择「SMTP 池轮换」,可勾选参与轮换的账号:
+
+**分配策略**:每封邮件独立挑选账号,评分 = 剩余额度比例 × 权重。剩余额度多、权重高的账号被选中更频繁;同等条件下轮转均衡。
+
+**账号健康管理**:
+
+| 触发条件 | 处置 |
+|---|---|
+| 超出限额(`rate_limited`) | 冷却到次日 UTC 零点(额度重置时刻) |
+| 认证失败 / 黑名单 / 发件人被拒 | 冷却 60 分钟(需人工介入修配置) |
+| 连接失败 / 超时,连续 3 次 | 指数退避冷却(2 分钟起,上限 60 分钟) |
+| 成功发送一次 | 清零连续失败计数,解除冷却 |
+
+冷却中的账号在池调度时被跳过;**所有账号都不可用时任务才会暂停**。在 SMTP 页可看到冷却状态并手动「解除冷却」(修改账号配置也会自动解除)。
+
+账号级配置:「参与池轮换」开关 + 「池内权重」(1-100)。
+
+### 7. 退信分类与抑制名单
+
+每次发送失败都会归类,判定顺序:**RFC 3463 增强状态码 → 关键词匹配 → 基础响应码 → 协议阶段**。
+
+| 类别 | 含义 | 处置 |
+|---|---|---|
+| 收件人无效 | 5.1.1 用户不存在 | 不重试 + **加入抑制名单** |
+| 邮箱已满 | 4.2.2 over quota | 重试 |
+| 超出限额 | 4.7.0 rate limit | 重试 + 冷却账号 |
+| 被拒绝投递 | 5.7.1 黑名单 | 不重试 + 冷却账号 |
+| 内容被拒 | 垃圾判定 / 超大 | 不重试(需改模板) |
+| 发件人被拒 | SPF/DKIM/DMARC 失败 | 不重试 + 冷却账号 |
+| 认证失败 | 535 凭据错误 | 不重试 + 冷却账号 |
+| 连接失败 / TLS 失败 / 超时 | 网络与握手问题 | 重试 + 冷却账号 |
+| 服务器临时错误 | 4xx 未细分 | 重试 |
+| 服务器永久拒绝 | 5xx 未细分 | 不重试 |
+
+**抑制名单**:硬退信地址自动入库。创建任务时通过 SQL `NOT EXISTS` 直接排除,发送中命中的也会即时跳过并计入任务的「抑制跳过」计数。可在「抑制名单」页查看、手动添加(支持批量粘贴)或移除。
+
+> 持续向无效地址投递会显著损害发信域名声誉,这是抑制名单存在的原因。移除前请确认地址确已可用。
+
+### 8. 统计报表
+
+「统计报表」页支持 7/14/30/90 天范围,三个视图:
+
+- **趋势与 SMTP**:每日成功/失败堆叠柱图 + 各账号尝试数、成功率、占比条、冷却状态
+- **退信分析**:类别构成占比条(点击类别查看具体样本)+ 类别×日期热力图 + 退信样本(含 SMTP 码与增强码)
+- **任务明细**:各任务的总数/成功/失败/抑制/成功率/完成时间
+
+数据来自 `smtp_daily_stats` 与 `bounce_daily_stats` 两张预聚合表,查询成本与历史数据量无关。
+
+### 9. Dashboard 与日志
+
+- 今日发送/成功/失败/成功率、SMTP 账号与今日用量、各状态任务数(含定时中)
+- 近 7 天发送趋势 + 失败原因 Top5(可跳转完整报表)
+- **SMTP 冷却告警**:有账号处于冷却时高亮提示
+- 日志页支持按状态/**退信类别**/关键字过滤,显示退信类别徽章与 SMTP 响应码
 
 ---
 
@@ -340,7 +408,8 @@ PUT    /api/auth/password          修改密码
 
 GET/POST        /api/smtp          列表 / 添加
 GET/PUT/DELETE  /api/smtp/:id      详情 / 更新 / 删除
-POST            /api/smtp/:id/test 连接测试
+POST            /api/smtp/:id/test    连接测试
+POST            /api/smtp/:id/uncool  解除冷却
 
 GET/POST        /api/templates     (同上 CRUD)
 GET/PUT/DELETE  /api/templates/:id
@@ -351,17 +420,31 @@ POST            /api/recipients/import            CSV/文本导入
 POST            /api/recipients/import-external   外部系统拉取导入
 GET             /api/recipients/stats             统计
 
-GET/POST        /api/campaigns     列表 / 创建
-GET/DELETE      /api/campaigns/:id
-GET             /api/campaigns/:id/recipients     收件人明细
+GET/POST        /api/campaigns     列表 / 创建(支持 scheduled_at / use_pool / pool_smtp_ids)
+GET/PUT/DELETE  /api/campaigns/:id 详情(池模式附带账号分配) / 修改 / 删除
+GET             /api/campaigns/:id/recipients     收件人明细(可按 status / category 过滤)
 GET             /api/campaigns/:id/logs           任务日志
-POST            /api/campaigns/:id/start|pause|resume|cancel
+GET             /api/campaigns/:id/bounces        本任务退信分类汇总
+POST            /api/campaigns/:id/start          启动(带定时则进入 scheduled)
+POST            /api/campaigns/:id/unschedule     取消定时
+POST            /api/campaigns/:id/pause|resume|cancel
 
-GET             /api/logs          发送日志(分页/过滤)
+GET             /api/logs          发送日志(分页 / 状态 / 退信类别 / 关键字)
 GET             /api/dashboard     汇总统计
 
 GET/PUT         /api/settings      设置读写
 POST            /api/settings/test-external       外部 API 连接测试
+
+GET             /api/reports/overview?days=7      报表概览(趋势/退信构成/SMTP 表现)
+GET             /api/reports/bounces?days=14      退信 类别×日期 矩阵
+GET             /api/reports/bounce-samples       退信样本(可按 category 过滤)
+GET             /api/reports/campaigns?days=30    任务维度报表
+GET             /api/reports/categories           退信类别标签表
+
+GET/POST        /api/suppressions  抑制名单(POST 支持单个或批量 text)
+GET             /api/suppressions/stats           按原因统计
+DELETE          /api/suppressions/:id             移除
+DELETE          /api/suppressions/email/:email    按邮箱移除
 ```
 
 ---
@@ -401,6 +484,18 @@ D1(5GB 存储 / 500 万行读每天)、KV、Queues、Workers(10 万请求/天)�
 **Q: wrangler 命令卡住?**
 多为网络问题(版本检查/登录态)。重试即可;涉及远程资源的命令可加 `--remote`。本地迁移数据库用 `npm run db:migrate:local`。
 
+**Q: 定时任务到点没启动?**
+Cron 每分钟触发一次,最多延迟 60 秒。若长时间未启动,检查 Worker 的 Cron Triggers 是否启用(Dashboard → Settings → Trigger Events),以及任务是否处于 `定时中` 状态(创建后需点「排定」)。
+
+**Q: 池轮换为什么某个账号一直没被使用?**
+可能原因:未勾选「参与池轮换」、正在冷却、今日额度已用尽、或权重相对过低。在「统计报表 → 趋势与 SMTP」可看到各账号的实际分配与冷却状态。
+
+**Q: 地址被误加入抑制名单怎么办?**
+在「抑制名单」页找到该地址点「移除」即可。移除后下次创建任务会重新包含它。建议先确认对方邮箱确实可用,否则会再次触发硬退信。
+
+**Q: 升级到新版本后报「no such column」?**
+说明数据库结构未升级。执行 `npm run db:migrate:remote`,或直接访问一次面板 —— Worker 首次请求会自动检测并应用增量迁移(`bootstrap.ts`)。
+
 **Q: 一键部署后想改代码?**
 仓库已克隆到你的 GitHub,直接推送即可触发 Workers Builds 自动重新部署;或本地 `git clone` 你的仓库后用 `npm run deploy` 手动部署。
 
@@ -412,15 +507,23 @@ D1(5GB 存储 / 500 万行读每天)、KV、Queues、Workers(10 万请求/天)�
 
 ---
 
-## 后续路线(规划 Phase 7)
+## 后续路线
 
-- [ ] 定时发送(指定时间启动任务)
-- [ ] SMTP Pool 自动轮换(多账号额度联动)
+已完成:
+
+- [x] 定时发送(指定时间启动任务)
+- [x] SMTP Pool 自动轮换(多账号额度联动 + 故障冷却)
+- [x] 退信分类(13 类)与统计报表
+- [x] 抑制名单(硬退信自动排除)
+
+计划中:
+
 - [ ] 附件 / 图片内嵌
 - [ ] 多用户与角色权限
 - [ ] 发送完成后 Webhook 通知
 - [ ] 独立 Consumer Worker 拆分(横向扩展)
-- [ ] 更丰富的退信分类与统计报表
+- [ ] 周期性重复发送(cron 表达式)
+- [ ] 收件人分组与分段发送
 
 ---
 

@@ -8,6 +8,8 @@ const NAVS = [
   { to: "/recipients", label: "收件人", icon: "👥" },
   { to: "/campaigns", label: "发送任务", icon: "🚀" },
   { to: "/logs", label: "发送日志", icon: "📋" },
+  { to: "/reports", label: "统计报表", icon: "📈" },
+  { to: "/suppressions", label: "抑制名单", icon: "🚫" },
   { to: "/settings", label: "设置", icon: "⚙️" },
 ];
 

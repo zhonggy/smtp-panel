@@ -51,7 +51,7 @@ export interface SmtpConnectOptions {
   ehloDomain?: string;
 }
 
-interface SmtpReply {
+export interface SmtpReply {
   code: number;
   lines: string[];
   text: string;

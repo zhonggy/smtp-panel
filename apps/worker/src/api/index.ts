@@ -11,6 +11,8 @@ import campaignRoutes from "./routes/campaigns";
 import logRoutes from "./routes/logs";
 import dashboardRoutes from "./routes/dashboard";
 import settingsRoutes from "./routes/settings";
+import reportRoutes from "./routes/reports";
+import suppressionRoutes from "./routes/suppressions";
 
 export const apiApp = new Hono<AppEnv>();
 
@@ -42,3 +44,5 @@ apiApp.route("/campaigns", campaignRoutes);
 apiApp.route("/logs", logRoutes);
 apiApp.route("/dashboard", dashboardRoutes);
 apiApp.route("/settings", settingsRoutes);
+apiApp.route("/reports", reportRoutes);
+apiApp.route("/suppressions", suppressionRoutes);

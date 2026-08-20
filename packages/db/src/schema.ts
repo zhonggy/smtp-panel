@@ -41,6 +41,19 @@ export const smtp_accounts = sqliteTable("smtp_accounts", {
   /** 每日发送上限,0 = 不限制 */
   daily_limit: integer("daily_limit").notNull().default(0),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  /** 是否参与 SMTP 池轮换 */
+  in_pool: integer("in_pool", { mode: "boolean" }).notNull().default(true),
+  /** 池内权重(>=1),越大越优先 */
+  weight: integer("weight").notNull().default(1),
+  /** 冷却截止时间(ISO);未到期时池调度跳过该账号 */
+  cooldown_until: text("cooldown_until"),
+  /** 最近一次错误与时间 */
+  last_error: text("last_error"),
+  last_error_at: text("last_error_at"),
+  /** 连续失败次数,达阈值自动冷却 */
+  consecutive_failures: integer("consecutive_failures").notNull().default(0),
+  /** 最后一次使用时间(轮换时优先选最久未用) */
+  last_used_at: text("last_used_at"),
   created_at: text("created_at").notNull(),
   updated_at: text("updated_at").notNull(),
 });
@@ -98,6 +111,14 @@ export const campaigns = sqliteTable("campaigns", {
   retry_limit: integer("retry_limit").notNull().default(3),
   /** 若设置,任务只发送到该邮箱(用于测试) */
   test_email: text("test_email"),
+  /** 定时启动时间(ISO);到点由 Cron 自动入队 */
+  scheduled_at: text("scheduled_at"),
+  /** 是否使用 SMTP 池轮换(true 时忽略 smtp_id) */
+  use_pool: integer("use_pool", { mode: "boolean" }).notNull().default(false),
+  /** 池模式候选 SMTP id 列表(逗号分隔;空 = 全部启用且在池中的账号) */
+  pool_smtp_ids: text("pool_smtp_ids"),
+  /** 命中抑制名单被跳过的数量 */
+  suppressed: integer("suppressed").notNull().default(0),
   last_error: text("last_error"),
   created_at: text("created_at").notNull(),
   started_at: text("started_at"),
@@ -120,6 +141,12 @@ export const campaign_recipients = sqliteTable(
     status: text("status").notNull().default("pending"),
     retry_count: integer("retry_count").notNull().default(0),
     last_error: text("last_error"),
+    /** 最后一次失败的退信类别 */
+    bounce_category: text("bounce_category"),
+    /** 命中硬退信/抑制名单,不再投递 */
+    suppressed: integer("suppressed", { mode: "boolean" }).notNull().default(false),
+    /** 最后一次尝试使用的 SMTP(池模式下每封可能不同) */
+    last_smtp_id: integer("last_smtp_id"),
     sent_at: text("sent_at"),
   },
   (t) => [
@@ -144,6 +171,12 @@ export const send_logs = sqliteTable(
     /** success | failed */
     status: text("status").notNull(),
     error: text("error"),
+    /** 退信类别(见 @panel/mail 的 BounceCategory) */
+    bounce_category: text("bounce_category"),
+    /** SMTP 基础响应码,如 550 */
+    smtp_code: integer("smtp_code"),
+    /** RFC 3463 增强状态码,如 5.1.1 */
+    enhanced_code: text("enhanced_code"),
     message_id: text("message_id"),
     duration_ms: integer("duration_ms"),
     created_at: text("created_at").notNull(),
@@ -179,3 +212,43 @@ export const settings = sqliteTable("settings", {
   value: text("value").notNull(),
   updated_at: text("updated_at").notNull(),
 });
+
+/**
+ * 抑制名单:硬退信 / 手动屏蔽的地址,后续任务自动跳过
+ */
+export const suppressions = sqliteTable(
+  "suppressions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    email: text("email").notNull(),
+    /** invalid_recipient | blocked | manual | complaint */
+    reason: text("reason").notNull().default("invalid_recipient"),
+    bounce_category: text("bounce_category"),
+    smtp_code: integer("smtp_code"),
+    detail: text("detail"),
+    campaign_id: integer("campaign_id"),
+    created_at: text("created_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("idx_suppressions_email").on(t.email),
+    index("idx_suppressions_created").on(t.created_at),
+  ],
+);
+
+/**
+ * 每日退信分类统计(报表加速,避免全表扫 send_logs)
+ */
+export const bounce_daily_stats = sqliteTable(
+  "bounce_daily_stats",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    date: text("date").notNull(),
+    category: text("category").notNull(),
+    smtp_id: integer("smtp_id"),
+    count: integer("count").notNull().default(0),
+  },
+  (t) => [
+    uniqueIndex("idx_bds_date_cat_smtp").on(t.date, t.category, t.smtp_id),
+    index("idx_bds_date").on(t.date),
+  ],
+);

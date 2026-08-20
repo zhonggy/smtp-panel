@@ -11,6 +11,8 @@ import Campaigns from "./pages/Campaigns";
 import CampaignDetail from "./pages/CampaignDetail";
 import Logs from "./pages/Logs";
 import Settings from "./pages/Settings";
+import Reports from "./pages/Reports";
+import Suppressions from "./pages/Suppressions";
 
 /** 登录保护 */
 function RequireAuth() {
@@ -34,6 +36,8 @@ export default function App() {
           <Route path="/campaigns" element={<Campaigns />} />
           <Route path="/campaigns/:id" element={<CampaignDetail />} />
           <Route path="/logs" element={<Logs />} />
+          <Route path="/reports" element={<Reports />} />
+          <Route path="/suppressions" element={<Suppressions />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
       </Route>

@@ -12,11 +12,36 @@ export type RecipientSource = "manual" | "csv" | "external_api";
 /** 任务状态 */
 export type CampaignStatus =
   | "draft"
+  /** 已排定,等待 Cron 到点启动 */
+  | "scheduled"
   | "queued"
   | "sending"
   | "paused"
   | "completed"
   | "cancelled";
+
+/** 退信类别(与 @panel/mail 的 BounceCategory 保持一致) */
+export type BounceCategoryKey =
+  | "connection"
+  | "tls"
+  | "auth"
+  | "invalid_recipient"
+  | "mailbox_full"
+  | "sender_rejected"
+  | "content_rejected"
+  | "rate_limited"
+  | "blocked"
+  | "temporary"
+  | "permanent"
+  | "timeout"
+  | "unknown";
+
+/** 抑制名单原因 */
+export type SuppressionReason =
+  | "invalid_recipient"
+  | "blocked"
+  | "manual"
+  | "complaint";
 
 /** 任务内收件人发送状态 */
 export type CampaignRecipientStatus = "pending" | "sent" | "failed";
@@ -37,6 +62,18 @@ export interface SmtpAccountDTO {
   reply_to: string | null;
   daily_limit: number;
   enabled: boolean;
+  /** 是否参与池轮换 */
+  in_pool: boolean;
+  /** 池内权重 */
+  weight: number;
+  /** 冷却截止时间 */
+  cooldown_until: string | null;
+  /** 是否正在冷却中 */
+  cooling: boolean;
+  last_error: string | null;
+  last_error_at: string | null;
+  consecutive_failures: number;
+  last_used_at: string | null;
   created_at: string;
   updated_at: string;
   today_total: number;
@@ -79,13 +116,22 @@ export interface CampaignDTO {
   pending: number;
   success: number;
   failed: number;
+  suppressed: number;
   speed_limit: number;
   retry_limit: number;
   test_email: string | null;
+  /** 定时启动时间(ISO);null = 立即启动 */
+  scheduled_at: string | null;
+  /** 是否使用 SMTP 池轮换 */
+  use_pool: boolean;
+  /** 池模式候选账号(逗号分隔 id) */
+  pool_smtp_ids: string | null;
   last_error: string | null;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
+  /** 详情接口附带:池内各账号发送情况 */
+  pool_usage?: { id: number; name: string; sent: number; failed: number }[];
 }
 
 /** 任务内收件人明细 */
@@ -96,6 +142,9 @@ export interface CampaignRecipientDTO {
   status: CampaignRecipientStatus;
   retry_count: number;
   last_error: string | null;
+  bounce_category: BounceCategoryKey | null;
+  suppressed: boolean;
+  last_smtp_id: number | null;
   sent_at: string | null;
 }
 
@@ -110,6 +159,9 @@ export interface SendLogDTO {
   subject: string;
   status: SendLogStatus;
   error: string | null;
+  bounce_category: BounceCategoryKey | null;
+  smtp_code: number | null;
+  enhanced_code: string | null;
   duration_ms: number | null;
   created_at: string;
 }
@@ -192,3 +244,101 @@ export interface RecipientStatsDTO {
 
 /** 可选的发送速度(封/分钟) */
 export const SPEED_OPTIONS = [1, 2, 5, 10, 30, 60] as const;
+
+// ===== 报表 =====
+
+/** 退信类别标签项 */
+export interface BounceCategoryMeta {
+  key: BounceCategoryKey;
+  label: string;
+}
+
+/** 报表概览 */
+export interface ReportOverviewDTO {
+  range: { days: number; since: string };
+  totals: { total: number; success: number; failed: number; success_rate: number };
+  trend: { date: string; total: number; success: number; failed: number }[];
+  bounces: { category: BounceCategoryKey; label: string; count: number; ratio: number }[];
+  smtp_performance: {
+    id: number;
+    name: string;
+    total: number;
+    success: number;
+    failed: number;
+    success_rate: number;
+    daily_limit: number;
+    enabled: boolean;
+    in_pool: boolean;
+    cooling: boolean;
+  }[];
+  campaign_status: Record<string, number>;
+  suppressed_total: number;
+}
+
+/** 退信 × 日期 矩阵 */
+export interface BounceMatrixDTO {
+  range: { days: number; since: string };
+  categories: BounceCategoryMeta[];
+  matrix: { date: string; counts: Record<string, number>; total: number }[];
+}
+
+/** 退信样本 */
+export interface BounceSampleDTO {
+  id: number;
+  recipient: string;
+  subject: string;
+  smtp_name: string | null;
+  campaign_name: string | null;
+  bounce_category: BounceCategoryKey | null;
+  label: string | null;
+  smtp_code: number | null;
+  enhanced_code: string | null;
+  error: string | null;
+  created_at: string;
+}
+
+/** 任务维度报表行 */
+export interface CampaignReportDTO {
+  id: number;
+  name: string;
+  status: CampaignStatus;
+  use_pool: boolean;
+  total: number;
+  success: number;
+  failed: number;
+  suppressed: number;
+  pending: number;
+  success_rate: number;
+  scheduled_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+}
+
+// ===== 抑制名单 =====
+
+export interface SuppressionDTO {
+  id: number;
+  email: string;
+  reason: SuppressionReason;
+  bounce_category: BounceCategoryKey | null;
+  label: string | null;
+  smtp_code: number | null;
+  detail: string | null;
+  campaign_id: number | null;
+  created_at: string;
+}
+
+export interface SuppressionStatsDTO {
+  total: number;
+  by_reason: { reason: string; count: number }[];
+}
+
+/** 定时发送可选的快捷选项(分钟) */
+export const SCHEDULE_PRESETS = [
+  { label: "10 分钟后", minutes: 10 },
+  { label: "30 分钟后", minutes: 30 },
+  { label: "1 小时后", minutes: 60 },
+  { label: "3 小时后", minutes: 180 },
+  { label: "明天同一时间", minutes: 1440 },
+] as const;

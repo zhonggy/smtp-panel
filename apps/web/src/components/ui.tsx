@@ -121,6 +121,24 @@ export function Modal({
 // ===== Badge =====
 const BADGE_COLORS: Record<string, string> = {
   draft: "bg-slate-700 text-slate-300",
+  scheduled: "bg-violet-600/30 text-violet-300",
+  cooling: "bg-orange-600/30 text-orange-300",
+  // 退信类别
+  connection: "bg-rose-600/30 text-rose-300",
+  tls: "bg-rose-600/30 text-rose-300",
+  auth: "bg-rose-700/40 text-rose-200",
+  invalid_recipient: "bg-amber-700/40 text-amber-200",
+  mailbox_full: "bg-amber-600/30 text-amber-300",
+  sender_rejected: "bg-fuchsia-600/30 text-fuchsia-300",
+  content_rejected: "bg-orange-600/30 text-orange-300",
+  rate_limited: "bg-sky-600/30 text-sky-300",
+  blocked: "bg-rose-800/50 text-rose-200",
+  temporary: "bg-slate-600/40 text-slate-300",
+  permanent: "bg-rose-600/30 text-rose-300",
+  timeout: "bg-yellow-700/40 text-yellow-200",
+  unknown: "bg-slate-700 text-slate-400",
+  manual: "bg-slate-600/40 text-slate-300",
+  complaint: "bg-fuchsia-700/40 text-fuchsia-200",
   queued: "bg-indigo-600/30 text-indigo-300",
   sending: "bg-sky-600/30 text-sky-300",
   paused: "bg-amber-600/30 text-amber-300",
@@ -131,10 +149,10 @@ const BADGE_COLORS: Record<string, string> = {
   pending: "bg-slate-600/30 text-slate-300",
   sent: "bg-emerald-600/30 text-emerald-300",
   active: "bg-emerald-600/30 text-emerald-300",
-  blocked: "bg-rose-600/30 text-rose-300",
   ssl: "bg-sky-600/30 text-sky-300",
   starttls: "bg-violet-600/30 text-violet-300",
   none: "bg-slate-600/30 text-slate-300",
+  indigo: "bg-indigo-600/30 text-indigo-300",
 };
 
 export function Badge({ color, children, className = "" }: { color?: string; children: ReactNode; className?: string }) {
@@ -175,4 +193,105 @@ export function EmptyRow({ colSpan, children = "暂无数据" }: { colSpan: numb
       </td>
     </tr>
   );
+}
+// ===== 占比条 =====
+export function RatioBar({
+  segments,
+  height = 8,
+}: {
+  segments: { value: number; className: string; label?: string }[];
+  height?: number;
+}) {
+  const total = segments.reduce((a, s) => a + s.value, 0) || 1;
+  return (
+    <div className="w-full flex rounded-full overflow-hidden bg-slate-800" style={{ height }}>
+      {segments.map((s, i) =>
+        s.value > 0 ? (
+          <div
+            key={i}
+            className={s.className}
+            style={{ width: `${(s.value / total) * 100}%` }}
+            title={s.label ? `${s.label}: ${s.value}` : String(s.value)}
+          />
+        ) : null,
+      )}
+    </div>
+  );
+}
+
+// ===== 统计卡 =====
+export function StatCard({
+  label,
+  value,
+  sub,
+  tone = "slate",
+}: {
+  label: string;
+  value: string | number;
+  sub?: string;
+  tone?: "slate" | "sky" | "emerald" | "rose" | "indigo" | "amber" | "violet";
+}) {
+  const tones: Record<string, string> = {
+    slate: "border-slate-700/40",
+    sky: "border-sky-700/40 text-sky-300",
+    emerald: "border-emerald-700/40 text-emerald-300",
+    rose: "border-rose-700/40 text-rose-300",
+    indigo: "border-indigo-700/40 text-indigo-300",
+    amber: "border-amber-700/40 text-amber-300",
+    violet: "border-violet-700/40 text-violet-300",
+  };
+  return (
+    <div className={`bg-slate-900 border ${tones[tone]} rounded-xl p-4`}>
+      <div className="text-xs text-slate-500 mb-1">{label}</div>
+      <div className="text-2xl font-bold">{value}</div>
+      {sub && <div className="text-xs text-slate-500 mt-1">{sub}</div>}
+    </div>
+  );
+}
+
+// ===== 本地时间输入(datetime-local <-> ISO) =====
+export function DateTimeInput({
+  value,
+  onChange,
+  min,
+  ...rest
+}: {
+  value: string | null;
+  onChange: (iso: string | null) => void;
+  min?: string;
+} & Record<string, unknown>) {
+  const toLocal = (iso: string | null) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  return (
+    <input
+      type="datetime-local"
+      value={toLocal(value)}
+      min={min ?? toLocal(new Date().toISOString())}
+      onChange={(e) => {
+        const v = e.target.value;
+        onChange(v ? new Date(v).toISOString() : null);
+      }}
+      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/40 transition"
+      {...rest}
+    />
+  );
+}
+
+/** 格式化本地时间(紧凑) */
+export function fmtTime(iso: string | null | undefined): string {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "-";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** 百分比格式化 */
+export function pct(n: number, digits = 1): string {
+  return `${(n * 100).toFixed(digits)}%`;
 }

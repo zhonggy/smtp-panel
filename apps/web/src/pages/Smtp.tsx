@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { api } from "../api";
 import type { SmtpAccountDTO, SmtpTestResultDTO } from "../types";
-import { Button, Input, Select, Field, Modal, Badge, Spinner, EmptyRow } from "../components/ui";
+import { Button, Input, Select, Field, Modal, Badge, Spinner, EmptyRow, fmtTime } from "../components/ui";
 import { useToast } from "../toast";
 
 export default function Smtp() {
@@ -20,7 +20,7 @@ export default function Smtp() {
 
   const openAdd = () => {
     setEditingId(null);
-    setEdit({ name: "", host: "", port: 465, username: "", password: "", security: "ssl", from_name: "", from_email: "", reply_to: "", daily_limit: 0, enabled: true });
+    setEdit({ name: "", host: "", port: 465, username: "", password: "", security: "ssl", from_name: "", from_email: "", reply_to: "", daily_limit: 0, enabled: true, in_pool: true, weight: 1 });
     setEditOpen(true);
   };
 
@@ -59,6 +59,16 @@ export default function Smtp() {
     }
   };
 
+  const uncool = async (id: number) => {
+    try {
+      await api.post(`/api/smtp/${id}/uncool`);
+      toast("已解除冷却", "success");
+      load();
+    } catch (e: any) {
+      toast(e.message, "error");
+    }
+  };
+
   const testConn = async (id: number) => {
     setTestResult(null);
     setTestLoading(true);
@@ -89,6 +99,7 @@ export default function Smtp() {
               <th className="text-left px-4 py-3">加密</th>
               <th className="text-left px-4 py-3">发件人</th>
               <th className="text-right px-4 py-3">今日发送</th>
+              <th className="text-center px-4 py-3">池</th>
               <th className="text-center px-4 py-3">状态</th>
               <th className="text-right px-4 py-3">操作</th>
             </tr>
@@ -106,15 +117,39 @@ export default function Smtp() {
                   <span className="text-rose-400">{item.today_failed}</span>
                   {item.daily_limit > 0 && <span className="text-slate-500 ml-1">/ {item.daily_limit}</span>}
                 </td>
-                <td className="px-4 py-3 text-center"><Badge color={item.enabled ? "active" : "blocked"}>{item.enabled ? "正常" : "禁用"}</Badge></td>
-                <td className="px-4 py-3 text-right space-x-1">
+                <td className="px-4 py-3 text-center">
+                  {item.in_pool ? (
+                    <span className="text-xs text-indigo-300">
+                      参与{item.weight > 1 ? ` ×${item.weight}` : ""}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-600">不参与</span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-center space-y-1">
+                  <Badge color={item.enabled ? "active" : "blocked"}>{item.enabled ? "正常" : "禁用"}</Badge>
+                  {item.cooling && (
+                    <div>
+                      <Badge color="cooling">冷却至 {fmtTime(item.cooldown_until)}</Badge>
+                    </div>
+                  )}
+                  {item.last_error && !item.cooling && (
+                    <div className="text-[10px] text-rose-400/70 max-w-[140px] truncate mx-auto" title={item.last_error}>
+                      {item.last_error}
+                    </div>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-right space-x-1 whitespace-nowrap">
+                  {item.cooling && (
+                    <Button variant="outline" size="sm" onClick={() => uncool(item.id)}>解除冷却</Button>
+                  )}
                   <Button variant="outline" size="sm" onClick={() => testConn(item.id)}>测试</Button>
                   <Button variant="ghost" size="sm" onClick={() => openEdit(item)}>编辑</Button>
                   <Button variant="ghost" size="sm" onClick={() => remove(item.id)}>删除</Button>
                 </td>
               </tr>
             ))}
-            {list.length === 0 && <EmptyRow colSpan={7} />}
+            {list.length === 0 && <EmptyRow colSpan={8} />}
           </tbody>
         </table>
       </div>
@@ -151,12 +186,25 @@ export default function Smtp() {
         </div>
         <Field label="回复地址(可选)"><Input value={edit.reply_to ?? ""} onChange={(e: any) => setEdit({ ...edit, reply_to: e.target.value })} /></Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="每日发送上限(0=不限)"><Input type="number" value={edit.daily_limit ?? 0} onChange={(e: any) => setEdit({ ...edit, daily_limit: parseInt(e.target.value) || 0 })} /></Field>
+          <Field label="每日发送上限(0=不限)" hint="池轮换按剩余额度分配">
+            <Input type="number" value={edit.daily_limit ?? 0} onChange={(e: any) => setEdit({ ...edit, daily_limit: parseInt(e.target.value) || 0 })} />
+          </Field>
           <Field label="状态">
             <Select value={edit.enabled ? "true" : "false"} onChange={(e: any) => setEdit({ ...edit, enabled: e.target.value === "true" })}>
               <option value="true">启用</option>
               <option value="false">禁用</option>
             </Select>
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="参与池轮换">
+            <Select value={edit.in_pool === false ? "false" : "true"} onChange={(e: any) => setEdit({ ...edit, in_pool: e.target.value === "true" })}>
+              <option value="true">参与</option>
+              <option value="false">不参与</option>
+            </Select>
+          </Field>
+          <Field label="池内权重(1-100)" hint="权重越高分配越多">
+            <Input type="number" min={1} max={100} value={edit.weight ?? 1} onChange={(e: any) => setEdit({ ...edit, weight: Math.min(100, Math.max(1, parseInt(e.target.value) || 1)) })} />
           </Field>
         </div>
       </Modal>

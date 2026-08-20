@@ -12,6 +12,7 @@ router.get("/", async (c) => {
   const pageSize = Math.min(100, Math.max(1, parseInt(c.req.query("page_size") ?? "20", 10)));
   const status = c.req.query("status");
   const campaignId = c.req.query("campaign_id");
+  const category = c.req.query("category");
   const search = c.req.query("search")?.trim();
   const db = drizzle(c.env.DB);
 
@@ -21,6 +22,7 @@ router.get("/", async (c) => {
     const id = parseInt(campaignId, 10);
     if (!isNaN(id)) conds.push(eq(send_logs.campaign_id, id));
   }
+  if (category) conds.push(eq(send_logs.bounce_category, category));
   if (search) {
     conds.push(
       or(

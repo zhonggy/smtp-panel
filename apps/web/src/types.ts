@@ -14,6 +14,15 @@ export type {
   CsvImportResultDTO,
   RecipientStatsDTO,
   CampaignStatus,
+  BounceCategoryKey,
+  BounceCategoryMeta,
+  SuppressionReason,
+  ReportOverviewDTO,
+  BounceMatrixDTO,
+  BounceSampleDTO,
+  CampaignReportDTO,
+  SuppressionDTO,
+  SuppressionStatsDTO,
 } from "@shared/types";
 
-export { SPEED_OPTIONS, isValidEmail, nameFromEmail } from "@shared";
+export { SPEED_OPTIONS, SCHEDULE_PRESETS, isValidEmail, nameFromEmail } from "@shared";
