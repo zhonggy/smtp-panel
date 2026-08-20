@@ -11,18 +11,18 @@ binding = "ASSETS"
 not_found_handling = "single-page-application"
 
 # D1 业务数据库
-# database_id 由 scripts/gen-config.mjs 从环境变量 / .env.deploy 注入
+# database_id 为占位值(全零 UUID)。一键部署时 Cloudflare 会自动创建资源
+# 并改写为真实 ID;手动部署时由 scripts/gen-config.mjs 自动填充。
 [[d1_databases]]
 binding = "DB"
 database_name = "smtp-panel"
-database_id = "${D1_DATABASE_ID}"
+database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "packages/db/migrations"
 
-# KV:Session / 限流 / 队列节流锁
-# id 由 scripts/gen-config.mjs 从环境变量 / .env.deploy 注入
+# KV:Session / 限流 / 队列节流锁(id 同上,为占位值)
 [[kv_namespaces]]
 binding = "KV"
-id = "${KV_NAMESPACE_ID}"
+id = "00000000000000000000000000000000"
 
 # 发信队列(生产者:API 入队;消费者:同 Worker 处理)
 [[queues.producers]]

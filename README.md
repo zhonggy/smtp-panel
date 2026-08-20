@@ -152,7 +152,7 @@
 > 一键部署会**把仓库克隆到你的 GitHub 账号下**,后续可在 Cloudflare Dashboard 中通过 Workers Builds 持续构建(推送即重新部署)。
 > 仓库需为公开仓库,Deploy Button 才对其他人生效。
 >
-> 一键部署时 Cloudflare 会直接把创建好的资源 ID 写入克隆仓库的 `wrangler.toml`,因此**无需任何额外配置**;下方“资源 ID 配置”仅适用于本地/手动部署场景。
+> **无需任何额外配置** —— Cloudflare 会创建 D1 / KV / Queue 并把真实资源 ID 写入克隆仓库的 `wrangler.toml`。
 
 ### 方式二:手动部署(Wrangler CLI)
 
@@ -163,41 +163,37 @@
 git clone https://github.com/zhonggy/smtp-panel.git && cd smtp-panel
 npm install
 
-# 2. 登录并创建资源(每个账号只需一次)
+# 2. 登录 Cloudflare
 npx wrangler login
-npx wrangler d1 create smtp-panel
-npx wrangler kv namespace create KV
+
+# 3. 创建队列(D1 与 KV 会在下一步自动创建)
 npx wrangler queues create smtp-panel-mail
 
-# 3. (可选)设置加密主密钥;不设则自动生成并存储在数据库中
+# 4. (可选)设置加密主密钥;不设则自动生成并存储在数据库中
 npx wrangler secret put ENCRYPTION_KEY
 
-# 4. 一键构建 + 迁移 + 部署
+# 5. 一键构建 + 迁移 + 部署(自动发现/创建 D1 与 KV)
 npm run deploy
 ```
 
-第 4 步会自动读取上一步创建的资源 ID(详见下节),无需手工拷贴。
+#### 资源 ID 是怎么确定的
 
-#### 资源 ID 配置
+`wrangler.toml` 中的 `database_id` / KV `id` 写的是**占位值**（全零），部署时由 `scripts/gen-config.mjs` 替换为真实 ID 并输出 `wrangler.generated.toml`（不入版本库）。解析顺序：
 
-`wrangler.toml` 中的资源 ID 以 `${D1_DATABASE_ID}` / `${KV_NAMESPACE_ID}` 占位,部署时由 `scripts/gen-config.mjs` 渲染为 `wrangler.generated.toml`(不入版本库)。解析优先级:
-
-| 优先级 | 来源 | 适用场景 |
+| 顺序 | 来源 | 说明 |
 |---|---|---|
-| 1 | 环境变量 `D1_DATABASE_ID` / `KV_NAMESPACE_ID` | CI、Workers Builds、临时覆盖 |
-| 2 | `.env.deploy` 文件 | 本地开发(已被 git 忽略) |
-| 3 | 通过已登录的 wrangler 自动发现 | **仅 D1**，按 `database_name` 精确匹配 |
+| 0 | 配置中已是真实 ID | 一键部署后的仓库属于此情形，直接透传 |
+| 1 | 环境变量 `D1_DATABASE_ID` / `KV_NAMESPACE_ID` | CI / Workers Builds / 临时覆盖 |
+| 2 | `.env.deploy` 文件 | 本地固定绑定（已 gitignore） |
+| 3 | wrangler 精确匹配已有资源 | D1 按 `database_name`，KV 按标题 `smtp-panel-KV` |
+| 4 | 自动创建缺失资源 | 仅本地；创建后写入 `.env.deploy` |
 
-> **KV 必须显式配置**：配置中只有 binding 名（`KV`），与命名空间标题无强关联，自动推断可能错绑到同账号下其他命名空间（会导致登录会话丢失、任务锁异常），因此不做自动发现。
+因此：
 
-**一键部署用户建议在 Dashboard 里固定这两个值**：你的 Worker → Settings → Build → Variables and Secrets，添加：
+- **一键部署的人什么都不用做** —— Cloudflare 会在克隆仓库时把占位值改写为它创建的真实 ID，脚本检测到已是真实 ID 就直接透传
+- **本地部署只需 `npx wrangler login`** —— 剩下的交给脚本（找不到就创建）
 
-```
-D1_DATABASE_ID   = 你的 D1 数据库 ID
-KV_NAMESPACE_ID  = 你的 KV 命名空间 ID
-```
-
-本地开发则写入文件：
+只有想绑定到特定的已有资源，或构建报错提示无法解析时，才需要手动指定：
 
 ```bash
 cp .env.deploy.example .env.deploy
@@ -205,6 +201,8 @@ npx wrangler d1 list             # 查看 database_id
 npx wrangler kv namespace list   # 查看 KV id
 # 把两个值填入 .env.deploy
 ```
+
+> KV 的匹配只认**标题等于 `smtp-panel-KV`** 的命名空间，不做模糊匹配。因为配置里只有 binding 名，模糊推断可能绑到账号下其他名字带 kv 的命名空间，而 KV 存着 Session 与任务锁，绑错会导致登录失效、任务不推进。
 
 > 这两个值是**资源标识符而非密钥**（无授权能力，公开也不影响安全），外置仅为让任何人克隆后能绑定到自己的资源。真正的密钥（`ENCRYPTION_KEY`、API Token）始终只存于 Worker Secret。
 
@@ -406,13 +404,11 @@ D1(5GB 存储 / 500 万行读每天)、KV、Queues、Workers(10 万请求/天)�
 **Q: 一键部署后想改代码?**
 仓库已克隆到你的 GitHub,直接推送即可触发 Workers Builds 自动重新部署;或本地 `git clone` 你的仓库后用 `npm run deploy` 手动部署。
 
-**Q: 报错“无法解析 D1_DATABASE_ID / KV_NAMESPACE_ID”?**
-KV 不做自动发现（binding 名无法可靠对应到命名空间），必须显式提供。错误信息会列出你账号下现有的 KV 命名空间供选择。
-- Workers Builds：Settings → Build → Variables and Secrets 添加两个变量
-- 本地：`cp .env.deploy.example .env.deploy` 后填入，通过 `npx wrangler d1 list` / `npx wrangler kv namespace list` 获取
+**Q: 报错“无法解析资源 ID”?**
+本地：先 `npx wrangler login`，脚本会自动发现或创建资源。构建环境（不会自动创建资源）：在 Settings → Build → Variables and Secrets 添加 `D1_DATABASE_ID` 与 `KV_NAMESPACE_ID`。错误信息会列出你账号下现有的 KV 命名空间供选择。
 
 **Q: 部署后登录总是失效 / 任务卡住？**
-检查绑定的 KV 命名空间是否与预期一致（构建日志里 `✔ 已生成 wrangler.generated.toml` 下方会打印 ID 和来源）。Session 和任务锁都存在 KV，绑错命名空间会表现为登录后立即白屏、发送任务不推进。
+检查绑定的 KV 命名空间是否正确（构建日志中 `✔ 已生成 wrangler.generated.toml` 下方会打印 ID 和来源）。Session 和任务锁都存在 KV，绑错会表现为登录后立即白屏、发送任务不推进。
 
 ---
 
