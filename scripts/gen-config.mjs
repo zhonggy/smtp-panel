@@ -32,8 +32,22 @@ const SENTINELS = {
 const template = readFileSync(SOURCE, "utf8");
 const workerName = /^\s*name\s*=\s*"([^"]+)"/m.exec(template)?.[1] ?? "smtp-panel";
 const configuredDbName = /database_name\s*=\s*"([^"]+)"/.exec(template)?.[1] ?? workerName;
-/** 本项目约定的 KV 命名空间标题(创建与匹配都用它,避免歧义) */
-const expectedKvTitle = `${workerName}-KV`;
+/** KV binding 名(用于推测命名空间标题) */
+const kvBinding = /\[\[kv_namespaces\]\][\s\S]*?binding\s*=\s*"([^"]+)"/.exec(template)?.[1] ?? "KV";
+/**
+ * KV 命名空间标题的候选名（按优先级，全等匹配，不区分大小写）。
+ * 不同创建途径的命名习惯不一致：
+ *   wrangler kv namespace create KV  → "<worker>-KV"
+ *   Deploy Button 自动供应           → "<worker>"
+ * 绝不做模糊/包含匹配 —— 账号下往往有多个带 kv 字样的命名空间，
+ * 误绑会把 Session 与任务锁写入错误存储。
+ */
+const KV_TITLE_CANDIDATES = [
+  `${workerName}-${kvBinding}`,
+  `${workerName}_${kvBinding}`,
+  `${workerName}-kv`,
+  workerName,
+];
 
 // ===== 判断哪些项仍是占位值 =====
 
@@ -114,7 +128,7 @@ function wranglerJson(args) {
 
 /**
  * 精确发现已有资源。
- * 只做「确定性匹配」:D1 按 database_name 全等,KV 按约定标题全等。
+ * 只做「确定性匹配」:D1 按 database_name 全等，KV 按候选标题全等。
  * 不做模糊/包含匹配 —— 曾因此误绑到账号下其他 KV 命名空间,
  * 导致 Session 与任务锁写入错误存储。
  */
@@ -127,8 +141,12 @@ function discover(name) {
   }
   if (name === "KV_NAMESPACE_ID") {
     const list = listKvNamespaces();
-    const hit = list.find((n) => (n.title ?? "") === expectedKvTitle);
-    return hit?.id ?? "";
+    const norm = (s) => (s ?? "").trim().toLowerCase();
+    for (const candidate of KV_TITLE_CANDIDATES) {
+      const hit = list.find((n) => norm(n.title) === norm(candidate));
+      if (hit) return hit.id;
+    }
+    return "";
   }
   return "";
 }
@@ -160,9 +178,8 @@ function create(name) {
     return out ? extractId(out, /database_id\s*=\s*"([^"]+)"/) || extractId(out, /"uuid"\s*:\s*"([^"]+)"/) : "";
   }
   if (name === "KV_NAMESPACE_ID") {
-    console.log(`… 未找到 KV 命名空间 "${expectedKvTitle}",正在创建`);
-    // wrangler 会把 binding 名与 Worker 名拼成标题,直接指定完整标题更可控
-    const out = wrangler(["kv", "namespace", "create", "KV"]);
+    console.log(`… 未找到 KV 命名空间(候选: ${KV_TITLE_CANDIDATES.join(" / ")}),正在创建`);
+    const out = wrangler(["kv", "namespace", "create", kvBinding]);
     if (!out) return "";
     const id = extractId(out, /id\s*=\s*"([^"]+)"/) || extractId(out, /"id"\s*:\s*"([^"]+)"/);
     if (id) return id;
@@ -256,7 +273,8 @@ function reportMissing(names) {
     const list = listKvNamespaces();
     if (list.length > 0) {
       hint =
-        `\n你账号下现有的 KV 命名空间(可选一个填入 KV_NAMESPACE_ID):\n` +
+        `\n已尝试按以下标题匹配但未命中: ${KV_TITLE_CANDIDATES.join(" / ")}\n` +
+        `\n你账号下现有的 KV 命名空间(选一个填入 KV_NAMESPACE_ID):\n` +
         list.map((n) => `     ${n.id}  "${n.title ?? ""}"`).join("\n") +
         `\n`;
     }
