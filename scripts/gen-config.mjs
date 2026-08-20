@@ -75,45 +75,37 @@ function wranglerJson(args) {
 }
 
 const configuredDbName = /database_name\s*=\s*"([^"]+)"/.exec(template)?.[1] ?? "smtp-panel";
-const workerName = /^\s*name\s*=\s*"([^"]+)"/m.exec(template)?.[1] ?? "smtp-panel";
 
-/** 自动发现 D1 数据库 ID(按 wrangler.toml 中的 database_name 匹配) */
-let discoverCache = null;
+/**
+ * 自动发现仅适用于 D1——配置中的 database_name 提供了确定的匹配依据。
+ * KV 配置中只有 binding 名(与命名空间标题无关),无法可靠推断,
+ * 因此必须显式配置,避免错绑到同账号下其他命名空间。
+ */
+let kvListCache = null;
 function discover(name) {
   if (name === "D1_DATABASE_ID") {
     const list = wranglerJson(["d1", "list", "--json"]);
     if (!Array.isArray(list)) return "";
+    // 严格按名称精确匹配
     const hit = list.find((d) => d.name === configuredDbName);
     return hit?.uuid || hit?.database_id || "";
   }
-  if (name === "KV_NAMESPACE_ID") {
-    const list = wranglerJson(["kv", "namespace", "list"]);
-    if (!Array.isArray(list)) return "";
-    // 配置中只有 binding 名,按常见命名约定依次匹配
-    const titles = list.map((n) => ({ id: n.id, title: n.title ?? "" }));
-    const lower = (s) => s.toLowerCase();
-    const candidates = [
-      (t) => lower(t.title) === lower(`${workerName}-KV`),
-      (t) => lower(t.title).includes(lower(workerName)) && lower(t.title).includes("kv"),
-      (t) => lower(t.title) === "kv",
-      (t) => lower(t.title).includes("kv"),
-    ];
-    for (const match of candidates) {
-      const hit = titles.find(match);
-      if (hit) return hit.id;
-    }
-    return "";
-  }
   return "";
+}
+
+/** 列出账号下的 KV 命名空间,仅用于错误提示 */
+function listKvForHint() {
+  if (kvListCache === null) {
+    const list = wranglerJson(["kv", "namespace", "list"]);
+    kvListCache = Array.isArray(list) ? list : [];
+  }
+  return kvListCache;
 }
 
 function resolveVar(name) {
   if (process.env[name]) return { value: process.env[name], from: "env" };
   if (fileVars[name]) return { value: fileVars[name], from: ".env.deploy" };
-  // 自动发现只尝试一次性列举,失败即放弃
-  if (discoverCache === null) discoverCache = new Map();
-  if (!discoverCache.has(name)) discoverCache.set(name, discover(name));
-  const found = discoverCache.get(name);
+  const found = discover(name);
   return found ? { value: found, from: "wrangler 自动发现" } : { value: "", from: null };
 }
 
@@ -130,11 +122,23 @@ const rendered = template.replace(/\$\{([A-Z0-9_]+)\}/g, (match, name) => {
 });
 
 if (missing.length > 0) {
+  const needsKv = missing.includes("KV_NAMESPACE_ID");
+  let kvHint = "";
+  if (needsKv) {
+    const namespaces = listKvForHint();
+    if (namespaces.length > 0) {
+      kvHint = `
+你账号下现有的 KV 命名空间(选一个填入 KV_NAMESPACE_ID):
+${namespaces.map((n) => `     ${n.id}  "${n.title ?? ""}"`).join("\n")}
+`;
+    }
+  }
+
   console.error(`
 ✖ 无法解析以下配置项:
 
 ${missing.map((n) => `    ${n}`).join("\n")}
-
+${kvHint}
 请任选一种方式提供:
 
   1) 本地开发 —— 写入 ${ENV_FILE}
@@ -143,15 +147,18 @@ ${missing.map((n) => `    ${n}`).join("\n")}
   2) Workers Builds / CI —— 添加同名构建变量
      Cloudflare Dashboard → 你的 Worker → Settings → Build → Variables and Secrets
 
-  3) 让脚本自动发现 —— 确保 wrangler 已登录且资源已创建
+查询已有资源:
+     npx wrangler d1 list
+     npx wrangler kv namespace list
+
+若资源尚未创建:
      npx wrangler login
      npx wrangler d1 create ${configuredDbName}
      npx wrangler kv namespace create KV
      npx wrangler queues create smtp-panel-mail
 
-查询已有资源:
-     npx wrangler d1 list
-     npx wrangler kv namespace list
+说明：D1 可根据配置中的 database_name("${configuredDbName}")自动发现；
+KV 配置中只有 binding 名，无法可靠对应到具体命名空间，必须显式配置。
 `);
   process.exit(1);
 }

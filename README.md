@@ -186,9 +186,18 @@ npm run deploy
 |---|---|---|
 | 1 | 环境变量 `D1_DATABASE_ID` / `KV_NAMESPACE_ID` | CI、Workers Builds、临时覆盖 |
 | 2 | `.env.deploy` 文件 | 本地开发(已被 git 忽略) |
-| 3 | 通过已登录的 wrangler 自动发现 | 免配置兜底 |
+| 3 | 通过已登录的 wrangler 自动发现 | **仅 D1**，按 `database_name` 精确匹配 |
 
-大多数情况下依赖第 3 项即可(脚本会按 `database_name` 和命名约定匹配你账号下的资源)。如需固定或自动发现失败:
+> **KV 必须显式配置**：配置中只有 binding 名（`KV`），与命名空间标题无强关联，自动推断可能错绑到同账号下其他命名空间（会导致登录会话丢失、任务锁异常），因此不做自动发现。
+
+**一键部署用户建议在 Dashboard 里固定这两个值**：你的 Worker → Settings → Build → Variables and Secrets，添加：
+
+```
+D1_DATABASE_ID   = 你的 D1 数据库 ID
+KV_NAMESPACE_ID  = 你的 KV 命名空间 ID
+```
+
+本地开发则写入文件：
 
 ```bash
 cp .env.deploy.example .env.deploy
@@ -398,12 +407,12 @@ D1(5GB 存储 / 500 万行读每天)、KV、Queues、Workers(10 万请求/天)�
 仓库已克隆到你的 GitHub,直接推送即可触发 Workers Builds 自动重新部署;或本地 `git clone` 你的仓库后用 `npm run deploy` 手动部署。
 
 **Q: 报错“无法解析 D1_DATABASE_ID / KV_NAMESPACE_ID”?**
-说明脚本既没读到环境变量/`.env.deploy`，也没能通过 wrangler 自动发现资源。执行 `npx wrangler login` 后重试，或手动填写：
-```bash
-cp .env.deploy.example .env.deploy
-npx wrangler d1 list && npx wrangler kv namespace list   # 取得两个 ID
-```
-若资源尚未创建，先跑 `npx wrangler d1 create smtp-panel` 与 `npx wrangler kv namespace create KV`。
+KV 不做自动发现（binding 名无法可靠对应到命名空间），必须显式提供。错误信息会列出你账号下现有的 KV 命名空间供选择。
+- Workers Builds：Settings → Build → Variables and Secrets 添加两个变量
+- 本地：`cp .env.deploy.example .env.deploy` 后填入，通过 `npx wrangler d1 list` / `npx wrangler kv namespace list` 获取
+
+**Q: 部署后登录总是失效 / 任务卡住？**
+检查绑定的 KV 命名空间是否与预期一致（构建日志里 `✔ 已生成 wrangler.generated.toml` 下方会打印 ID 和来源）。Session 和任务锁都存在 KV，绑错命名空间会表现为登录后立即白屏、发送任务不推进。
 
 ---
 
