@@ -6,11 +6,25 @@
 
 不购买 VPS · 不自建邮件服务器 · Workers + D1 + KV + Queues + 第三方 SMTP
 
-<a href="https://deploy.workers.cloudflare.com/?url=https://github.com/zhonggy/cf-serv00">
+<a href="https://deploy.workers.cloudflare.com/?url=https://github.com/zhonggy/smtp-panel">
   <img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare Workers" style="height: 32px;"/>
 </a>
 
 </div>
+
+> **关于一键部署按钮的说明**
+>
+> 点击后 Cloudflare 会把本仓库**克隆到你自己的 GitHub 账号下**(仓库名可在部署页自定义),之后 Workers Builds 监听的是**你的克隆仓库**而非本仓库。
+>
+> 因此：
+> - 后续修改代码请推送到**你的克隆仓库**,推送到本仓库不会触发你的 Worker 重新部署
+> - 如果你 Fork 或克隆了本项目并希望在自己的 README 里也放一个可用的部署按钮,**需把按钮链接末尾的仓库地址改成你自己的**：
+>
+> ```
+> https://deploy.workers.cloudflare.com/?url=https://github.com/<你的用户名>/<你的仓库名>
+> ```
+>
+> 注：作为部署模板源的仓库必须是**公开仓库**,按钮才能对其他人生效。
 
 > 项目规划文档见 [`cloudflare-smtp-batch-mail-project-plan.md`](./cloudflare-smtp-batch-mail-project-plan.md)
 
@@ -125,7 +139,7 @@
 
 ### 方式一:一键部署(推荐)
 
-点击上方 **Deploy to Cloudflare Workers** 按钮(或[此链接](https://deploy.workers.cloudflare.com/?url=https://github.com/zhonggy/cf-serv00)),流程如下:
+点击上方 **Deploy to Cloudflare Workers** 按钮(或[此链接](https://deploy.workers.cloudflare.com/?url=https://github.com/zhonggy/smtp-panel)),流程如下:
 
 1. 授权 Cloudflare 账号(免费套餐即可)并关联你的 GitHub
 2. 在配置页可自定义:仓库名、Worker 名称、**D1 数据库名 / KV 命名空间名 / 队列名**(资源不存在会自动创建并绑定,无需手动建)
@@ -142,7 +156,7 @@
 
 ```bash
 # 1. 克隆并安装依赖(Windows 上若报 workerd 相关错误,改用: npm install --ignore-scripts)
-git clone https://github.com/zhonggy/cf-serv00.git && cd cf-serv00
+git clone https://github.com/zhonggy/smtp-panel.git && cd smtp-panel
 npm install
 
 # 2. 创建资源(每个账号只需一次),记下输出的 database_id 与 KV id
