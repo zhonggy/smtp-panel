@@ -106,7 +106,8 @@
 ### 项目结构
 
 ```
-├── wrangler.toml               # Worker 配置(根目录,Deploy Button 要求)
+├── wrangler.toml               # Worker 配置模板(资源 ID 用 ${VAR} 占位)
+├── .env.deploy.example         # 资源 ID 示例(复制为 .env.deploy 后填写)
 ├── .dev.vars.example           # Secret 示例(部署向导会提示填写)
 ├── apps/
 │   ├── worker/                 # Worker 源码(API + Consumer)
@@ -129,6 +130,7 @@
 │   └── shared/                 # 前后端共享类型与工具(校验/CSV/模板变量)
 ├── scripts/
 │   ├── fake-smtp-server.mjs    # 本地假 SMTP 服务器(测试用)
+│   ├── gen-config.mjs          # 渲染 wrangler.generated.toml(注入资源 ID)
 │   └── hash-password.mjs       # PBKDF2 哈希生成(CLI 种子用)
 └── package.json                # npm workspaces
 ```
@@ -149,6 +151,8 @@
 
 > 一键部署会**把仓库克隆到你的 GitHub 账号下**,后续可在 Cloudflare Dashboard 中通过 Workers Builds 持续构建(推送即重新部署)。
 > 仓库需为公开仓库,Deploy Button 才对其他人生效。
+>
+> 一键部署时 Cloudflare 会直接把创建好的资源 ID 写入克隆仓库的 `wrangler.toml`,因此**无需任何额外配置**;下方“资源 ID 配置”仅适用于本地/手动部署场景。
 
 ### 方式二:手动部署(Wrangler CLI)
 
@@ -159,33 +163,56 @@
 git clone https://github.com/zhonggy/smtp-panel.git && cd smtp-panel
 npm install
 
-# 2. 创建资源(每个账号只需一次),记下输出的 database_id 与 KV id
+# 2. 登录并创建资源(每个账号只需一次)
+npx wrangler login
 npx wrangler d1 create smtp-panel
 npx wrangler kv namespace create KV
 npx wrangler queues create smtp-panel-mail
 
-# 3. 把两个 ID 填入根目录 wrangler.toml 的对应占位符
-
-# 4. (可选)设置加密主密钥;不设则自动生成并存储在数据库中
+# 3. (可选)设置加密主密钥;不设则自动生成并存储在数据库中
 npx wrangler secret put ENCRYPTION_KEY
 
-# 5. 一键构建 + 迁移 + 部署
+# 4. 一键构建 + 迁移 + 部署
 npm run deploy
 ```
+
+第 4 步会自动读取上一步创建的资源 ID(详见下节),无需手工拷贴。
+
+#### 资源 ID 配置
+
+`wrangler.toml` 中的资源 ID 以 `${D1_DATABASE_ID}` / `${KV_NAMESPACE_ID}` 占位,部署时由 `scripts/gen-config.mjs` 渲染为 `wrangler.generated.toml`(不入版本库)。解析优先级:
+
+| 优先级 | 来源 | 适用场景 |
+|---|---|---|
+| 1 | 环境变量 `D1_DATABASE_ID` / `KV_NAMESPACE_ID` | CI、Workers Builds、临时覆盖 |
+| 2 | `.env.deploy` 文件 | 本地开发(已被 git 忽略) |
+| 3 | 通过已登录的 wrangler 自动发现 | 免配置兜底 |
+
+大多数情况下依赖第 3 项即可(脚本会按 `database_name` 和命名约定匹配你账号下的资源)。如需固定或自动发现失败:
+
+```bash
+cp .env.deploy.example .env.deploy
+npx wrangler d1 list             # 查看 database_id
+npx wrangler kv namespace list   # 查看 KV id
+# 把两个值填入 .env.deploy
+```
+
+> 这两个值是**资源标识符而非密钥**（无授权能力，公开也不影响安全），外置仅为让任何人克隆后能绑定到自己的资源。真正的密钥（`ENCRYPTION_KEY`、API Token）始终只存于 Worker Secret。
 
 <details>
 <summary>各命令分解(需要单独执行时)</summary>
 
 ```bash
 npm run build:web           # 构建前端到 apps/web/dist
+npm run config              # 生成 wrangler.generated.toml
 npm run db:migrate:remote   # 应用 D1 迁移(也可由 Worker 运行时自动建表兜底)
-npx wrangler deploy         # 部署 Worker
+npx wrangler deploy --config wrangler.generated.toml
 ```
 </details>
 
 **(可选)绑定自定义域名**:Cloudflare Dashboard → Workers & Pages → `smtp-panel` → Settings → Domains & Routes → Add Custom Domain,自动获得 HTTPS。
 
-> **迁移与建表**:本项目做了双保险 —— `npm run deploy` 会在部署前执行 `wrangler d1 migrations apply DB --remote`(按绑定名引用,兼容一键部署时自动重命名的数据库);即使跳过迁移,Worker 首次收到请求时也会自动执行幂等建表(`IF NOT EXISTS`)。
+> **迁移与建表**:本项目做了双保险 —— `npm run deploy` 会在部署前执行 `wrangler d1 migrations apply DB --remote`(按绑定名引用,兼容一键部署时自动重命名的数据库);即使跳过迁移,Worker 首次收到请求时也会自动执行幂等建表(`IF NOT EXISTS`)。一键部署走 Workers Builds 时同样会调用 `npm run deploy`。
 
 ---
 
@@ -207,6 +234,12 @@ npm run dev:web
 ```
 
 本地数据保存在 `.wrangler/state/`(首次请求自动建表;如需重置,删除该目录即可)。本地密钥 `.dev.vars` 留空时自动生成。
+
+> `npm run dev:worker` 会先执行 `npm run config` 生成 `wrangler.generated.toml`。本地开发虽使用模拟资源，但 wrangler 仍需配置中存在合法 ID 字段；若尚未创建云端资源，可先随便填入占位值：
+> ```bash
+> cp .env.deploy.example .env.deploy
+> # 写入任意字符串即可启动本地开发
+> ```
 
 ### 本地完整链路测试(无需真实 SMTP)
 
@@ -363,6 +396,14 @@ D1(5GB 存储 / 500 万行读每天)、KV、Queues、Workers(10 万请求/天)�
 
 **Q: 一键部署后想改代码?**
 仓库已克隆到你的 GitHub,直接推送即可触发 Workers Builds 自动重新部署;或本地 `git clone` 你的仓库后用 `npm run deploy` 手动部署。
+
+**Q: 报错“无法解析 D1_DATABASE_ID / KV_NAMESPACE_ID”?**
+说明脚本既没读到环境变量/`.env.deploy`，也没能通过 wrangler 自动发现资源。执行 `npx wrangler login` 后重试，或手动填写：
+```bash
+cp .env.deploy.example .env.deploy
+npx wrangler d1 list && npx wrangler kv namespace list   # 取得两个 ID
+```
+若资源尚未创建，先跑 `npx wrangler d1 create smtp-panel` 与 `npx wrangler kv namespace create KV`。
 
 ---
 

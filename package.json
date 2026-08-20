@@ -10,14 +10,15 @@
   "scripts": {
     "build": "npm run build -w apps/web",
     "build:web": "npm run build -w apps/web",
-    "deploy": "npm run build:web && npm run db:migrate:remote && wrangler deploy",
-    "dev:worker": "wrangler dev",
+    "config": "node scripts/gen-config.mjs",
+    "deploy": "npm run build:web && npm run config && npm run db:migrate:remote && wrangler deploy --config wrangler.generated.toml",
+    "dev:worker": "npm run config && wrangler dev --config wrangler.generated.toml",
     "dev:web": "npm run dev -w apps/web",
     "dev:smtp": "node scripts/fake-smtp-server.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "db:generate": "npm run generate -w packages/db",
-    "db:migrate:local": "wrangler d1 migrations apply DB --local",
-    "db:migrate:remote": "wrangler d1 migrations apply DB --remote"
+    "db:migrate:local": "npm run config && wrangler d1 migrations apply DB --local --config wrangler.generated.toml",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote --config wrangler.generated.toml"
   },
   "devDependencies": {
     "smtp-server": "^3.13.6",

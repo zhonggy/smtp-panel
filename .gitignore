@@ -2,5 +2,7 @@ node_modules/
 dist/
 .wrangler/
 .dev.vars
+.env.deploy
+wrangler.generated.toml
 *.log
 .DS_Store
