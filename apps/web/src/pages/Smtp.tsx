@@ -12,6 +12,7 @@ export default function Smtp() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [testResult, setTestResult] = useState<SmtpTestResultDTO | null>(null);
   const [testOpen, setTestOpen] = useState(false);
+  const [testLoading, setTestLoading] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = () => api.get<SmtpAccountDTO[]>("/api/smtp").then(setList).catch(() => {});
@@ -59,13 +60,16 @@ export default function Smtp() {
   };
 
   const testConn = async (id: number) => {
-    setTestResult({ ok: false, error: null, stage: null, transcript: [], extensions: [], auth_mechanisms: [] });
+    setTestResult(null);
+    setTestLoading(true);
     setTestOpen(true);
     try {
       const r = await api.post<SmtpTestResultDTO>(`/api/smtp/${id}/test`);
       setTestResult(r);
     } catch (e: any) {
       setTestResult({ ok: false, error: e.message, stage: null, transcript: [], extensions: [], auth_mechanisms: [] });
+    } finally {
+      setTestLoading(false);
     }
   };
 
@@ -159,7 +163,12 @@ export default function Smtp() {
 
       {/* 测试结果 Modal */}
       <Modal open={testOpen} title="SMTP 测试结果" onClose={() => setTestOpen(false)} wide>
-        {testResult && (
+        {testLoading && (
+          <div className="flex items-center gap-2 text-slate-400 text-sm py-4">
+            <Spinner /> 正在测试连接,请稍候…
+          </div>
+        )}
+        {!testLoading && testResult && (
           <div className="space-y-3">
             <div className={`text-sm font-medium ${testResult.ok ? "text-emerald-400" : "text-rose-400"}`}>
               {testResult.ok ? "✓ 连接成功" : "✕ 连接失败"}
@@ -180,7 +189,6 @@ export default function Smtp() {
             )}
           </div>
         )}
-        {!testResult && <Spinner />}
       </Modal>
     </div>
   );
