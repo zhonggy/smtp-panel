@@ -1,5 +1,115 @@
 @import "tailwindcss";
 
+/* ============================================================
+ * 白天/夜晚主题切换
+ *
+ * 原理:所有需要随主题变化的颜色层级声明为「间接变量」
+ *   --color-slate-900: var(--theme-slate-900)
+ * 这样不仅普通类(bg-slate-900)引用变量,
+ * 透明度变体(bg-slate-800/60)也会编译为
+ *   color-mix(in oklab, var(--color-slate-800) 60%, transparent)
+ * 从而在运行时跟随主题切换。
+ *
+ * 暗色(夜晚)为默认主题(:root 中写入 Tailwind 默认色板,视觉不变);
+ * 亮色(白天)通过 html.light 覆盖 --theme-* 变量实现,
+ * 无需改动任何组件类名。html.light 类由 ThemeToggle 组件
+ * 切换并持久化到 localStorage(见 index.html 防闪烁脚本)。
+ * ============================================================ */
+@theme {
+  --color-slate-50: var(--theme-slate-50);
+  --color-slate-100: var(--theme-slate-100);
+  --color-slate-200: var(--theme-slate-200);
+  --color-slate-300: var(--theme-slate-300);
+  --color-slate-400: var(--theme-slate-400);
+  --color-slate-500: var(--theme-slate-500);
+  --color-slate-600: var(--theme-slate-600);
+  --color-slate-700: var(--theme-slate-700);
+  --color-slate-800: var(--theme-slate-800);
+  --color-slate-900: var(--theme-slate-900);
+  --color-slate-950: var(--theme-slate-950);
+  --color-rose-200: var(--theme-rose-200);
+  --color-rose-300: var(--theme-rose-300);
+  --color-rose-400: var(--theme-rose-400);
+  --color-indigo-300: var(--theme-indigo-300);
+  --color-indigo-400: var(--theme-indigo-400);
+  --color-emerald-300: var(--theme-emerald-300);
+  --color-emerald-400: var(--theme-emerald-400);
+  --color-amber-300: var(--theme-amber-300);
+  --color-amber-400: var(--theme-amber-400);
+  --color-sky-300: var(--theme-sky-300);
+  --color-violet-300: var(--theme-violet-300);
+  --color-orange-300: var(--theme-orange-300);
+  --color-fuchsia-200: var(--theme-fuchsia-200);
+  --color-fuchsia-300: var(--theme-fuchsia-300);
+  --color-yellow-200: var(--theme-yellow-200);
+}
+
+/* ---------- 暗色(夜晚)默认值 = Tailwind 4 默认色板 ---------- */
+:root {
+  --theme-slate-50: oklch(98.4% 0.003 247.858);
+  --theme-slate-100: oklch(96.8% 0.007 247.896);
+  --theme-slate-200: oklch(92.9% 0.013 255.508);
+  --theme-slate-300: oklch(86.9% 0.022 252.894);
+  --theme-slate-400: oklch(70.4% 0.04 256.788);
+  --theme-slate-500: oklch(55.4% 0.046 257.417);
+  --theme-slate-600: oklch(44.6% 0.043 257.281);
+  --theme-slate-700: oklch(37.2% 0.044 257.287);
+  --theme-slate-800: oklch(27.9% 0.041 260.031);
+  --theme-slate-900: oklch(20.8% 0.042 265.755);
+  --theme-slate-950: oklch(12.9% 0.042 264.695);
+  --theme-rose-200: oklch(89.2% 0.058 10.001);
+  --theme-rose-300: oklch(81% 0.117 11.638);
+  --theme-rose-400: oklch(71.2% 0.194 13.428);
+  --theme-indigo-300: oklch(78.5% 0.115 274.713);
+  --theme-indigo-400: oklch(67.3% 0.182 276.935);
+  --theme-emerald-300: oklch(84.5% 0.143 164.978);
+  --theme-emerald-400: oklch(76.5% 0.177 163.223);
+  --theme-amber-300: oklch(87.9% 0.169 91.605);
+  --theme-amber-400: oklch(82.8% 0.189 84.429);
+  --theme-sky-300: oklch(82.8% 0.111 230.318);
+  --theme-violet-300: oklch(81.1% 0.111 293.571);
+  --theme-orange-300: oklch(83.7% 0.128 66.29);
+  --theme-fuchsia-200: oklch(90.3% 0.076 319.62);
+  --theme-fuchsia-300: oklch(83.3% 0.145 321.434);
+  --theme-yellow-200: oklch(94.5% 0.129 101.54);
+}
+
+/* ---------- 亮色(白天)主题 ---------- */
+html.light {
+  /* 背景层(反相):页面/卡片/输入框/边框 */
+  --theme-slate-950: #eef2f7; /* 页面背景 */
+  --theme-slate-900: #ffffff; /* 卡片/侧边栏 */
+  --theme-slate-800: #e2e8f0; /* 输入框/面板/hover/浅边框 */
+  --theme-slate-700: #cbd5e1; /* 边框/badge 背景 */
+  --theme-slate-600: #64748b; /* 次级面板背景(与 500 同值,兼顾文字对比) */
+  /* 文字层(变深,保证浅底对比度) */
+  --theme-slate-200: #1e293b; /* 强调文字 */
+  --theme-slate-300: #334155; /* 正文 */
+  --theme-slate-400: #475569; /* 次要文字 */
+  --theme-slate-500: #64748b; /* 占位符/更次要文字 */
+  /* 彩色文字加深一档(300/400 级在浅底上对比度不足) */
+  --theme-rose-400: #f43f5e;
+  --theme-rose-300: #e11d48;
+  --theme-rose-200: #e11d48;
+  --theme-indigo-400: #4f46e5;
+  --theme-indigo-300: #4f46e5;
+  --theme-emerald-400: #059669;
+  --theme-emerald-300: #059669;
+  --theme-amber-400: #d97706;
+  --theme-amber-300: #d97706;
+  --theme-sky-300: #0284c7;
+  --theme-violet-300: #7c3aed;
+  --theme-orange-300: #ea580c;
+  --theme-fuchsia-300: #c026d3;
+  --theme-fuchsia-200: #c026d3;
+  --theme-yellow-200: #ca8a04;
+}
+
+/* 主题切换时背景/文字平滑过渡 */
+body {
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
 /* 自定义滚动条 */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

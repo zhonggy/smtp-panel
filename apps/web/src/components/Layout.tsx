@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../auth";
+import ThemeToggle from "./ThemeToggle";
 
 const NAVS = [
   { to: "/dashboard", label: "仪表盘", icon: "📊" },
@@ -43,7 +44,10 @@ export default function Layout() {
           ))}
         </nav>
         <div className="border-t border-slate-800 p-3 text-xs text-slate-500">
-          <div className="mb-1 truncate">{user?.username}</div>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <span className="truncate">{user?.username}</span>
+            <ThemeToggle />
+          </div>
           <button onClick={logout} className="text-rose-400 hover:text-rose-300 transition">
             退出登录
           </button>

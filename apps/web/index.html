@@ -4,6 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SMTP 批量发信管理</title>
+    <script>
+      /* 主题防闪烁:在渲染前恢复上次选择的主题(默认暗色) */
+      (function () {
+        try {
+          if (localStorage.getItem("smtp-panel-theme") === "light") {
+            document.documentElement.classList.add("light");
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body class="bg-slate-950 text-slate-200">
     <div id="root"></div>
